@@ -1,6 +1,7 @@
 """Exercise hc discovery and durable lifecycle contracts without a shared core."""
 
 import json
+import shlex
 import subprocess
 import tempfile
 import unittest
@@ -110,6 +111,38 @@ class HcTests(unittest.TestCase):
         self.job.write_text(json.dumps({'argv': [str(executable), '--no-daemon', '-p', 'profile', 'task'], 'exit_record': str(self.root / 'exit.json')}))
         self.assertFalse(self.call(mode='action', action='launch', input=self.input)['ok'])
         self.assertEqual(json.loads(self.record.read_text())['state'], 'launch_uncertain')
+
+    def test_interactive_arguments_and_noninteractive_modes(self):
+        """Option operands and prompts do not become provider subcommands."""
+        executable = self.root / 'codex'
+        executable.write_text('#!/bin/sh\nexit 0\n')
+        executable.chmod(0o700)
+        for args in (['--no-daemon', '-p', 'review', 'task'],
+                     ['--no-daemon', '--model', 'exec', 'task'],
+                     ['--no-daemon', '--', 'review']):
+            with self.subTest(args=args):
+                self.job.write_text(json.dumps({'argv': [str(executable), *args], 'exit_record': str(self.root / 'exit.json')}))
+                command = f"hc run --json --bg --name bork-test --cwd {self.root} --label bork-run=run-1 " + ' '.join([str(executable), *args])
+                self.commands[command] = json.dumps({'address': 't7', 'first_message': {'sent': True}})
+                self.assertTrue(self.call(mode='action', action='launch', input=self.input)['ok'])
+                self.record.unlink()
+        for args in (['--no-daemon', 'review'], ['--no-daemon', 'exec', 'task'],
+                     ['--no-daemon', 'e', 'task'], ['--no-daemon', 'app-server'],
+                     ['--no-daemon', 'exec-server'], ['--no-daemon', '--print'],
+                     ['-p', '--no-daemon', 'task']):
+            with self.subTest(args=args):
+                self.job.write_text(json.dumps({'argv': [str(executable), *args], 'exit_record': str(self.root / 'exit.json')}))
+                self.assertFalse(self.call(mode='action', action='launch', input=self.input)['ok'])
+                self.assertFalse(self.record.exists())
+
+    def test_attention_navigation_retains_session(self):
+        """Navigation identifies the recorded core session even in another shell."""
+        self.saved(session="review's session")
+        self.terminal['status']['state'] = 'blocked'
+        self.commands['hc get t7'] = json.dumps(self.terminal)
+        self.commands['hc read t7 --lines 120'] = 'Permission required'
+        result = self.call(mode='action', action='inspect', input=self.input)
+        self.assertEqual(shlex.split(result['result']['navigation']), ["HC_SESSION=review's session", "hc", "attach", "t7"])
 
     def test_uncertain_launch_reconciles_without_relaunch(self):
         """Only one run-labeled terminal on the original core can recover an address."""

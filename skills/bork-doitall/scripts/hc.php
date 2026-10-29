@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/terminal.php';
+require_once __DIR__ . '/provider-command.php';
 
 /** Decode the documented direct hc JSON response, rejecting error envelopes. */
 function hcReply(array $args, callable $run): array
@@ -114,16 +115,14 @@ function hcAction(string $action, array $input, callable $run): array
         $job = readInput(field($input, 'job'));
         validateJob($job);
         $argv = $job['argv'];
-        if (count(array_intersect($argv, ['exec', 'e', 'review', 'app-server', 'exec-server', '--print'])) > 0) {
+        $mode = providerCommandMode($argv);
+        if (!$mode['interactive']) {
             throw new RuntimeException('hc roles require an interactive provider command.');
         }
-        hcCapabilities($run);
-        if (!in_array(strtolower(basename($argv[0])), ['codex', 'codex.exe'], true) && in_array('-p', $argv, true)) {
-            throw new RuntimeException('Print mode is not an interactive role.');
-        }
-        if (in_array(strtolower(basename($argv[0])), ['codex', 'codex.exe'], true) && !in_array('--no-daemon', $argv, true)) {
+        if (in_array(strtolower(basename($argv[0])), ['codex', 'codex.exe'], true) && !$mode['no_daemon']) {
             throw new RuntimeException('Codex requires --no-daemon.');
         }
+        hcCapabilities($run);
         if (!in_array($input['role'] ?? '', ['master', 'review', 'fix'], true)
             || !preg_match('/^[a-z0-9_-]{1,32}$/D', field($input, 'name'))
             || !is_dir(field($input, 'cwd'))) {
@@ -188,7 +187,9 @@ function hcAction(string $action, array $input, callable $run): array
     }
     if ($action === 'inspect') {
         $attention = hcObservation($terminal) === 'attention' ? $run(['hc', 'read', $record['terminal_id'], '--lines', '120']) : null;
-        return ['prompt_output' => $attention, 'terminal' => $terminal, 'observation' => hcObservation($terminal), 'navigation' => 'hc attach ' . $record['terminal_id']];
+        $session = $record['session'] ?? null;
+        $navigation = ($session !== null ? 'HC_SESSION=' . escapeshellarg($session) . ' ' : '') . 'hc attach ' . $record['terminal_id'];
+        return ['prompt_output' => $attention, 'terminal' => $terminal, 'observation' => hcObservation($terminal), 'navigation' => $navigation];
     }
     if ($action === 'wait') {
         return hcReply(['wait', $record['terminal_id'], '--timeout', '30'], $run);

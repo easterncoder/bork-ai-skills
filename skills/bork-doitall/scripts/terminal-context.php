@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/provider-command.php';
+
 /** Limit recovered process data to the terminal drivers' documented caller identity. */
 function terminalContextKeys(): array
 {
@@ -22,7 +24,7 @@ function terminalFrontend(string $directory, string $cwd, int $owner): ?array
     }
     $args = explode("\0", rtrim($command, "\0"));
     /* Daemons and noninteractive workers cannot identify an invoking terminal. */
-    if (count(array_intersect($args, ['app-server', 'exec', 'e', 'review', 'exec-server'])) > 0) {
+    if (!providerCommandMode($args)['interactive']) {
         return null;
     }
     $fields = preg_split('/\s+/', substr($stat, (int) strrpos($stat, ')') + 2));
