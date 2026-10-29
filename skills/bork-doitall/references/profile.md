@@ -1,6 +1,6 @@
 # Review Profiles
 
-Profiles add supplied organization or repository rules to BORK workflows. They are separate from tmux `cli_profile` and never relax the selected skill's authorization, scope, ownership, reviewer, or merge gates.
+Profiles add supplied organization or repository rules to BORK workflows. They are separate from terminal `cli_profile` and never relax the selected skill's authorization, scope, ownership, reviewer, or merge gates.
 
 ## Resolution and routing
 
