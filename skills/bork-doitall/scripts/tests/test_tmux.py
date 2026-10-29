@@ -128,13 +128,25 @@ class DoitallTests(unittest.TestCase):
         data['session_name'] = session
         return self.invoke('launch', data), record
 
-    def test_worker_roles_rejected(self):
-        """Only masters receive tmux sessions."""
-        for role in ('prify', 'review', 'fix'):
+    def test_unmanaged_roles_rejected(self):
+        """Only target masters and coordinated workers receive sessions."""
+        for role in ('prify', 'goodcode', 'unknown'):
             with self.subTest(role=role):
                 result, _ = self.launch(role)
                 self.assertFalse(result['ok'])
-                self.assertIn('Only master sessions', result['error'])
+                self.assertIn('Only master, review or fix sessions', result['error'])
+
+    @unittest.skipUnless(shutil.which('tmux'), 'tmux unavailable')
+    def test_goodcode_workers_have_separate_sessions(self):
+        """Review and fix can run concurrently under their own role identities."""
+        for role in ('review', 'fix'):
+            result, _ = self.launch(role=role, session=f'fixture-{role}')
+            self.assertTrue(result['ok'], result)
+            actual = subprocess.check_output([
+                'tmux', '-L', self.socket, 'display-message', '-p',
+                '-t', result['result']['pane'], '#{@bork-role}',
+            ], text=True).strip()
+            self.assertEqual(actual, role)
 
     @unittest.skipUnless(shutil.which('tmux'), 'tmux unavailable')
     def test_separate_master_sessions(self):

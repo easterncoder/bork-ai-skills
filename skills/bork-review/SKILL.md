@@ -15,7 +15,7 @@ Before starting, read [the shared coordination contract](references/coordination
 
 ## Loop
 
-For a doitall run, read [extra instruction routing](../bork-doitall/references/instruction-routing.md) and load the brief's `instruction_paths` before reviewing. Run as a native child of goodcode in either batch driver mode. Treat scoped acceptance criteria as product intent, carry applicable constraints into findings, and record instruction dispositions in `review.json`. Own findings and dispositions, not source edits, pushes or target phase changes. Report any interactive blocker to goodcode with the exact prompt and saved evidence path.
+For a doitall run, read [extra instruction routing](../bork-doitall/references/instruction-routing.md) and load the brief's `instruction_paths` before reviewing. Run as a worker owned by goodcode through its recorded Herdr, tmux or native driver. Treat scoped acceptance criteria as product intent, carry applicable constraints into findings, and record instruction dispositions in `review.json`. Own findings and dispositions, not source edits, pushes or target phase changes. Report any interactive blocker to goodcode with the exact prompt and saved evidence path.
 
 On resuming your recorded role with status `reviewing`, reconcile the current pass, HEAD, and any completed work first, then continue the interrupted phase. Do not enter the normal wait loop and wait on your own unfinished phase. Block if ownership or mutation results are ambiguous.
 
