@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/scheduler.php';
+require_once __DIR__ . '/environment.php';
 
 /** Require a nonempty string from a JSON object. */
 function requiredText(array $data, string $key): string
@@ -102,6 +103,7 @@ function approved(array $plan): void
     if (!is_array($approval) || ($approval['response'] ?? null) !== 'go' || ($approval['preview_sha256'] ?? null) !== hash('sha256', $preview)) {
         throw new RuntimeException('Approved preview and go evidence are required.');
     }
+    validateEnvironmentSelection($plan);
     if (($plan['schema_version'] ?? null) !== 5 || !is_array($plan['targets'] ?? null)) {
         throw new RuntimeException('Expected a version 5 target plan.');
     }
