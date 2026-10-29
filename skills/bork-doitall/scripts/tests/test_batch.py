@@ -99,6 +99,24 @@ class BatchTests(unittest.TestCase):
         self.assertTrue(self.call('inspect', target_id='12')['ok'])
         self.assertEqual(json.loads(self.plan.read_text())['execution_driver'], 'herdr')
 
+    def test_screen_selection_persistence_and_resume(self):
+        """Retain exact Screen resources through durable batch resume."""
+        plan = self.approved_plan()
+        plan['execution_driver'] = 'screen'
+        plan['environment_selection'] = {
+            'version': 1, 'execution_driver': 'screen',
+            'contexts': {'herdr': {'active': False}, 'tmux': {'active': False},
+                         'screen': {'active': True, 'pane_id': '0', 'socket': '123.fixture',
+                                    'session_id': '123.fixture', 'socket_dir': '/tmp/fixture', 'shell_pid': 124}},
+            'capability': {'supported': True, 'evidence': 'Verified Screen capacity'},
+        }
+        self.assertTrue(self.call('init', plan=plan)['ok'])
+        self.assertTrue(self.call('reserve')['ok'])
+        self.assertTrue(self.call('inspect', target_id='12')['ok'])
+        saved = json.loads(self.plan.read_text())
+        self.assertEqual(saved['execution_driver'], 'screen')
+        self.assertEqual(saved['environment_selection'], plan['environment_selection'])
+
     def test_environment_selection_mismatch_is_rejected(self):
         """Refuse a driver inconsistent with its approved membership evidence."""
         plan = self.approved_plan()

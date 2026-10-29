@@ -55,10 +55,10 @@ function field(array $data, string $key): string
 }
 
 /** Execute an argument array without shell interpolation. */
-function execute(array $args): string
+function execute(array $args, array $acceptedCodes = [0], ?array $environment = null): string
 {
     $errors = fopen('php://temp', 'w+');
-    $process = proc_open($args, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => $errors], $pipes, null, null, ['bypass_shell' => true]);
+    $process = proc_open($args, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => $errors], $pipes, null, $environment, ['bypass_shell' => true]);
     if (!is_resource($process)) {
         fclose($errors);
         throw new RuntimeException('Unable to start command.');
@@ -68,7 +68,7 @@ function execute(array $args): string
     fclose($pipes[1]);
     $code = proc_close($process);
     fclose($errors);
-    if ($code !== 0) {
+    if (!in_array($code, $acceptedCodes, true)) {
         throw new RuntimeException('Terminal command failed; reconcile before retrying.');
     }
     return trim($output);
@@ -97,6 +97,10 @@ function runPane(array $launch): int
     $record = field($job, 'exit_record');
     if (file_exists($record) || is_link($record) || !is_dir(dirname($record))) {
         throw new RuntimeException('Exit record exists or directory is missing.');
+    }
+    /* Keep the runner alive to record terminal interrupts delivered to its child. */
+    if (function_exists('pcntl_signal')) {
+        pcntl_signal(SIGINT, static function (): void {}, false);
     }
     $process = proc_open($job['argv'], [0 => STDIN, 1 => STDOUT, 2 => STDERR], $pipes, field($launch, 'cwd'), null, ['bypass_shell' => true]);
     if (!is_resource($process)) {
