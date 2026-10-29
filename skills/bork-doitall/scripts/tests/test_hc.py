@@ -1,7 +1,6 @@
 """Exercise hc discovery and durable lifecycle contracts without a shared core."""
 
 import json
-import shlex
 import subprocess
 import tempfile
 import unittest
@@ -119,7 +118,7 @@ class HcTests(unittest.TestCase):
         executable.chmod(0o700)
         for args in (['--no-daemon', '-p', 'review', 'task'],
                      ['--no-daemon', '--model', 'exec', 'task'],
-                     ['--no-daemon', '--', 'review']):
+                     ['--no-daemon', '--', 'review'], ['task', '--no-daemon']):
             with self.subTest(args=args):
                 self.job.write_text(json.dumps({'argv': [str(executable), *args], 'exit_record': str(self.root / 'exit.json')}))
                 command = f"hc run --json --bg --name bork-test --cwd {self.root} --label bork-run=run-1 " + ' '.join([str(executable), *args])
@@ -135,6 +134,17 @@ class HcTests(unittest.TestCase):
                 self.assertFalse(self.call(mode='action', action='launch', input=self.input)['ok'])
                 self.assertFalse(self.record.exists())
 
+    def test_claude_print_after_option_operand_is_rejected(self):
+        """Print flags remain noninteractive after documented Claude options."""
+        executable = self.root / 'claude'
+        executable.write_text('#!/bin/sh\nexit 0\n')
+        executable.chmod(0o700)
+        for flag in ('--print', '-p'):
+            self.job.write_text(json.dumps({'argv': [str(executable), '--model', 'sonnet', flag, 'task'],
+                                            'exit_record': str(self.root / 'exit.json')}))
+            self.assertFalse(self.call(mode='action', action='launch', input=self.input)['ok'])
+            self.assertFalse(self.record.exists())
+
     def test_attention_navigation_retains_session(self):
         """Navigation identifies the recorded core session even in another shell."""
         self.saved(session="review's session")
@@ -142,7 +152,9 @@ class HcTests(unittest.TestCase):
         self.commands['hc get t7'] = json.dumps(self.terminal)
         self.commands['hc read t7 --lines 120'] = 'Permission required'
         result = self.call(mode='action', action='inspect', input=self.input)
-        self.assertEqual(shlex.split(result['result']['navigation']), ["HC_SESSION=review's session", "hc", "attach", "t7"])
+        self.assertIsNone(result['result']['navigation'])
+        self.assertEqual(result['result']['navigation_environment'], {'HC_SESSION': "review's session"})
+        self.assertEqual(result['result']['navigation_argv'], ['hc', 'attach', 't7'])
 
     def test_uncertain_launch_reconciles_without_relaunch(self):
         """Only one run-labeled terminal on the original core can recover an address."""

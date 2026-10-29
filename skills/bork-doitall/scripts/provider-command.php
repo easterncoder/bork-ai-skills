@@ -9,7 +9,13 @@ function providerCommandMode(array $argv): array
     $valueOptions = ['-c', '--config', '--enable', '--disable', '--remote', '--remote-auth-token-env',
         '-i', '--image', '-m', '--model', '--local-provider', '-p', '--profile', '-s', '--sandbox',
         '-C', '--cd', '--add-dir', '-a', '--ask-for-approval'];
+    $claudeValueOptions = ['--model', '--agent', '--agents', '--append-system-prompt', '--autocompact',
+        '--debug-file', '--effort', '--environment', '--fallback-model', '--input-format', '--json-schema',
+        '--max-budget-usd', '-n', '--name', '--output-format', '--permission-mode', '--permission-prompts',
+        '--plugin-dir', '--plugin-url', '--remote-control-session-name-prefix', '--session-id', '--setting-sources',
+        '--settings', '--system-prompt', '--system-prompt-snapshot'];
     $noDaemon = false;
+    $hasPositional = false;
     for ($i = 1, $count = count($argv); $i < $count; $i++) {
         $arg = $argv[$i];
         if ($arg === '--') {
@@ -21,17 +27,17 @@ function providerCommandMode(array $argv): array
         if ($arg === '--print' || (!$codex && $arg === '-p')) {
             return ['interactive' => false, 'no_daemon' => $noDaemon];
         }
-        if ($codex && in_array($arg, $valueOptions, true)) {
+        if (in_array($arg, $codex ? $valueOptions : $claudeValueOptions, true)) {
             $i++;
             continue;
         }
         if (str_starts_with($arg, '-')) {
             continue;
         }
-        if (in_array($arg, ['exec', 'e', 'review', 'app-server', 'exec-server'], true)) {
+        if (!$hasPositional && in_array($arg, ['exec', 'e', 'review', 'app-server', 'exec-server'], true)) {
             return ['interactive' => false, 'no_daemon' => $noDaemon];
         }
-        break;
+        $hasPositional = true;
     }
     return ['interactive' => true, 'no_daemon' => $noDaemon];
 }

@@ -188,8 +188,10 @@ function hcAction(string $action, array $input, callable $run): array
     if ($action === 'inspect') {
         $attention = hcObservation($terminal) === 'attention' ? $run(['hc', 'read', $record['terminal_id'], '--lines', '120']) : null;
         $session = $record['session'] ?? null;
-        $navigation = ($session !== null ? 'HC_SESSION=' . escapeshellarg($session) . ' ' : '') . 'hc attach ' . $record['terminal_id'];
-        return ['prompt_output' => $attention, 'terminal' => $terminal, 'observation' => hcObservation($terminal), 'navigation' => $navigation];
+        return ['prompt_output' => $attention, 'terminal' => $terminal, 'observation' => hcObservation($terminal),
+            'navigation' => $session === null ? 'hc attach ' . $record['terminal_id'] : null,
+            'navigation_environment' => $session === null ? [] : ['HC_SESSION' => $session],
+            'navigation_argv' => ['hc', 'attach', $record['terminal_id']]];
     }
     if ($action === 'wait') {
         return hcReply(['wait', $record['terminal_id'], '--timeout', '30'], $run);
