@@ -1,10 +1,12 @@
 # Target Master Workflow
 
-Read this file as the target master, a Herdr or tmux terminal agent, or a native subagent. Follow `bork-doitall` with role `target_master` and its task brief; do not launch another batch coordinator or another master. Own this target's phase transitions, promotion and merge gate. Delegate implementation to prify; goodcode owns its review/fix workers through the selected driver.
+Read this file as the target master, an hc, Herdr, tmux or Screen terminal agent, or a native subagent. Follow `bork-doitall` with role `target_master` and its task brief; do not launch another batch coordinator or another master. Own this target's phase transitions, promotion and merge gate. Delegate implementation to prify; goodcode owns its review/fix workers through the selected driver.
 
 Use the supplied canonical issue/PR, root and sub-issue relationship metadata, request repository, implementation repository and checkout, authenticated account, host capability profile, implementation dependencies, and base. Read [durable batch runtime](batch-runtime.md) and publish version 5 phase transitions through `scripts/batch.php`, retaining timestamps, local and remote SHAs, validation, worktree paths, and subordinate run directories. Recheck GitHub identity and current PR state before mutation. Keep the master agent available throughout all phases and publish its final report before exiting.
 
 While waiting on a child, this master applies [surfacing interactive attention](panes.md#surfacing-interactive-attention): promptly pass any child approval or question to the coordinator with target, role, agent ID and exact prompt. Keep the master available for inspection.
+
+For an hc master, publish the final durable result and end the turn while remaining available. The coordinator follows the [hc contract](hc.md) to verify descendants, accept the result and perform final owned-process shutdown before slot release; this supersedes instructions below to exit the master process only for hc.
 
 ## Entry and Phases
 

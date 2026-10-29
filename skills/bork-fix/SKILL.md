@@ -19,7 +19,7 @@ For a doitall run, read [extra instruction routing](../bork-doitall/references/i
 
 On resuming your recorded role with status `coding`, reconcile the current pass, HEAD, and any completed work first, then continue the interrupted phase. Do not enter the normal wait loop and wait on your own unfinished phase. Block if ownership or mutation results are ambiguous.
 
-1. Wait for `reviewed`, `good`, or `blocked` within your active turn. On `good`, save your completion acknowledgment and exit. On `blocked`, report the recorded blocker and stop.
+1. Wait for `reviewed`, `good`, or `blocked` within your active turn. On `good`, save your completion acknowledgment and end the cycle turn under the shared completion contract. On `blocked`, report the recorded blocker and stop.
 2. Consume the supplied runtime brief, `.review`, and the referenced findings from durable `review.json`; reuse the owner's resolved identity and cached product intent. Verify run, cycle, pass, branch, reviewed HEAD, and base SHA against the current repository and active run. Missing or empty findings, non-actionable handoffs, or mismatched context are operational blockers. Do not edit against stale findings.
 3. Atomically publish `coding`. Inspect the worktree and preserve unrelated changes. Reuse the review context snapshot, refreshing relevant context only as the shared contract requires.
 4. Fix only the blocking findings in this handoff. Respect PR and linked-issue intent. Do not perform optional refactors, nits, or unrelated cleanup.
