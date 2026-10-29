@@ -1,5 +1,7 @@
 """Offline failure injection for the durable batch transition journal."""
 
+import os
+import shutil
 import hashlib
 import json
 import subprocess
@@ -7,13 +9,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-HELPER = Path(__file__).resolve().parents[1] / 'batch.php'
+HELPER = Path(__file__).resolve().parents[1] / 'batch.js'
 PR = 'https://github.com/example/project/pull/12'
 HEAD = 'a' * 40
 
 
 class BatchTests(unittest.TestCase):
-    """Run the public PHP helper with disposable local records only."""
+    """Run the public JavaScript helper with disposable local records only."""
 
     def setUp(self):
         """Create an empty batch directory with no GitHub or Git dependency."""
@@ -32,7 +34,7 @@ class BatchTests(unittest.TestCase):
         if action not in ('init', 'inspect') and 'expected_revision' not in payload:
             payload['expected_revision'] = self.revision
         source.write_text(json.dumps(payload))
-        process = subprocess.run(['php', str(HELPER), str(source)], capture_output=True, text=True, timeout=10)
+        process = subprocess.run([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), str(HELPER), str(source)], capture_output=True, text=True, timeout=10)
         output = json.loads(process.stdout)
         self.assertEqual(process.returncode, 0 if output['ok'] else 1, process.stderr)
         if output['ok'] and 'state_revision' in output['result']:
@@ -240,6 +242,28 @@ class BatchTests(unittest.TestCase):
         self.assertFalse(self.call('reserve', expected_revision=0)['ok'])
         self.assertEqual(self.call('reserve')['result']['launch'], [])
         self.assertEqual(json.loads(self.plan.read_text())['targets']['12']['status'], 'starting')
+
+    def test_parallel_reservations_adopt_only_one_revision(self):
+        """Two actual processes cannot reserve the same approved queue revision."""
+        self.assertTrue(self.call('init', plan=self.approved_plan())['ok'])
+        expected = self.revision
+        inputs = [self.write(f'parallel-{i}.json', {'action': 'reserve', 'plan_path': str(self.plan),
+                                                   'expected_revision': expected}) for i in range(2)]
+        node = shutil.which(os.environ.get('NODE_BINARY', 'node'))
+        processes = [subprocess.Popen([node, str(HELPER), source], stdout=subprocess.PIPE,
+                                      stderr=subprocess.PIPE, text=True) for source in inputs]
+        replies = []
+        for process in processes:
+            output, error = process.communicate(timeout=10)
+            reply = json.loads(output)
+            self.assertEqual(process.returncode, 0 if reply['ok'] else 1, error)
+            replies.append(reply)
+        self.assertEqual(sum(reply['ok'] for reply in replies), 1)
+        winner = next(reply for reply in replies if reply['ok'])
+        self.assertEqual(winner['result']['launch'], ['12'])
+        saved = json.loads(self.plan.read_text())
+        self.assertEqual(saved['state_revision'], expected + 1)
+        self.assertEqual(saved['targets']['12']['status'], 'starting')
 
     def test_push_and_pr_creation_crash_adopts_one_prify_result(self):
         """A lost master cannot launch a second prify after publication."""

@@ -4,7 +4,7 @@ Load the relevant action section when using it; do not read helper implementatio
 
 ## CLI Contract
 
-Invoke `php <absolute-helper-path>` with one JSON object on stdin, preferably through a prepared input file or a structured process API. Never interpolate untrusted values into shell command text. Output is one JSON object: `ok: true, result: {...}` or `ok: false, event: blocked, error: ...` with nonzero exit. Helpers do not interpret findings, grant authorization, post messages, push, delete worktrees, or prove semantic prerequisites.
+Invoke `node <absolute-helper-path>` with one JSON object on stdin, preferably through a prepared input file or a structured process API. Never interpolate untrusted values into shell command text. Output is one JSON object: `ok: true, result: {...}` or `ok: false, event: blocked, error: ...` with nonzero exit. Helpers do not interpret findings, grant authorization, post messages, push, delete worktrees, or prove semantic prerequisites.
 
 | action | Additional input fields | Result / use |
 | --- | --- | --- |
@@ -25,7 +25,7 @@ Run `wait` in a foreground tool call with a timeout allowing its bounded wait to
 
 Use `cleanup-check` after removing only recorded disposable artifacts. A locally removable worktree still requires verified remote publication, stopped workers, and the skill's other cleanup conditions. Signature verification is mechanical only; record scope/Conventional Commit checks separately. Keep verified SHA lists so later phases check new commits only, unless signing trust/configuration changed.
 
-Maintainers can run `python3 <skill>/scripts/tests/test_workflow.py` for isolated behavior checks. Python is a test-only dependency; the runtime needs PHP and Git. The positive SSH-signature fixture additionally uses `ssh-keygen` when available. No tests access GitHub.
+Maintainers can run `python3 <skill>/scripts/tests/test_workflow.py` for isolated behavior checks. Python is a test-only dependency; the runtime needs Node.js 22+ and Git. The positive SSH-signature fixture additionally uses `ssh-keygen` when available. No tests access GitHub.
 
 For explicit doitall runs, the owner resolves the required author email once from applicable user/repository commit instructions, falling back to local Git author configuration/environment (for example `git var GIT_AUTHOR_IDENT`) when no explicit email is required, records it as `commit_email`, and passes it as `email` to `verify-commits`. Do not infer Git commit email from a GitHub login or change the user's configuration. Other invocations keep the existing email default.
 

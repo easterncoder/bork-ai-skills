@@ -8,8 +8,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-HELPER = Path(__file__).resolve().parents[1] / 'layout.php'
-TMUX = HELPER.with_name('tmux.php')
+HELPER = Path(__file__).resolve().parents[1] / 'layout.js'
+TMUX = HELPER.with_name('tmux.js')
 
 
 class LayoutTests(unittest.TestCase):
@@ -33,7 +33,7 @@ class LayoutTests(unittest.TestCase):
         self.index += 1
         path = self.root / f'input-{self.index}.json'
         path.write_text(json.dumps(data))
-        proc = subprocess.run(['php', str(helper), action, str(path)], capture_output=True, text=True, timeout=15)
+        proc = subprocess.run([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), str(helper), action, str(path)], capture_output=True, text=True, timeout=15)
         result = json.loads(proc.stdout)
         self.assertEqual(proc.returncode, 0 if result['ok'] else 1, proc.stderr)
         return result
@@ -102,9 +102,9 @@ class LayoutTests(unittest.TestCase):
         stub.chmod(0o700)
         record = {'context': {}, 'coordinator': 'w1:p1', 'cwd': str(self.root),
                   'resources': {'coordinator': {'id': 'w1:p1'}}}
-        code = 'require $argv[1]; $r=json_decode($argv[2],true); echo json_encode([borkLayoutHerdrSnapshot([],"w1:p1"),borkLayoutHerdrSplit($r,["parent"=>"coordinator","direction"=>"right","size"=>150])]);'
+        code = 'const a=require(require("node:path").join(require("node:path").dirname(process.argv[1]),"layout-adapters/herdr.js"));const r=JSON.parse(process.argv[2]);console.log(require(require("node:path").resolve(require("node:path").dirname(process.argv[1]), "../../bork-review/scripts/support.js")).json_encode([a.borkLayoutHerdrSnapshot([],"w1:p1"),a.borkLayoutHerdrSplit(r,{parent:"coordinator",direction:"right",size:150})]));'
         env = {**os.environ, 'PATH': str(self.root) + os.pathsep + os.environ['PATH'], 'HERDR_ENV': '1'}
-        result = subprocess.run(['php', '-r', code, str(HELPER), json.dumps(record)], env=env,
+        result = subprocess.run([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), '-e', code, str(HELPER), json.dumps(record)], env=env,
                                 capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)
         snapshot, pane = json.loads(result.stdout)
@@ -205,7 +205,7 @@ class LayoutTests(unittest.TestCase):
             self.index += 1
             request_path = self.root / f'bind-{self.index}.json'
             request_path.write_text(json.dumps(data))
-            proc = subprocess.run(['php', str(HELPER), 'bind', str(request_path)], env=env,
+            proc = subprocess.run([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), str(HELPER), 'bind', str(request_path)], env=env,
                                   capture_output=True, text=True, timeout=15)
             return json.loads(proc.stdout)
         for change in ({'address': 'other'}, {'created_ms': 43},
@@ -244,7 +244,7 @@ class LayoutTests(unittest.TestCase):
         """An integrated launch stays in its assigned pane and existing window."""
         data, record, _ = self.create()
         job = self.root / 'job.json'
-        job.write_text(json.dumps({'argv': [shutil.which('php'), '-r', 'echo "layout worker\\n";'], 'exit_record': str(self.root / 'exit.json')}))
+        job.write_text(json.dumps({'argv': [shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), '-e', 'console.log("layout worker");'], 'exit_record': str(self.root / 'exit.json')}))
         launch = {'role': 'master', 'cwd': str(self.root), 'job': str(job), 'session_name': 'unused-legacy-name',
                   'socket': self.socket, 'layout_record': data['record'], 'slot': 1, 'task_id': 'master-1', 'target_id': 'i1'}
         result = self.invoke('launch', launch, TMUX)

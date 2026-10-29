@@ -1,6 +1,18 @@
 # Portable Runtime and Context Reuse
 
-Read once per agent session. PHP CLI 8.0+, Git and the verified GitHub CLI supply portable mechanics through `bork-review/scripts/workflow.php`. Resolve sibling paths from the installed skill. Helpers never grant authorization or evaluate source correctness. Missing dependencies are blockers; do not silently install substitutes.
+Read once per agent session. Node.js 22+, Git and the verified GitHub CLI supply portable mechanics through `bork-review/scripts/workflow.js`. Resolve sibling paths from the installed skill. Helpers never grant authorization or evaluate source correctness. Missing dependencies are blockers; do not silently install substitutes.
+
+## Runtime dependencies and upgrades
+
+Use Node.js 22 or newer from a maintained LTS line. Node 22 is the minimum supported LTS line; its built-in `node:fs`, `node:child_process`, `node:crypto`, and CommonJS APIs provide the runtime. No npm install or build step is needed. Each scripts directory declares `type: commonjs`, so standalone sibling skills and plugin installs resolve modules from their own locations even inside projects using ES modules. Verify `node --version` before invoking a helper. Missing Node.js or a version below 22 is a named `dependency_blocker`; do not silently install or substitute an interpreter.
+
+Serialized batch and layout mutations additionally require Linux with util-linux `flock` on PATH and a local filesystem supporting advisory locks and atomic same-directory rename. Install util-linux using the host's approved package manager when authorized. Native Windows and filesystems with unverified advisory-lock semantics are unsupported for these mutations. Read-only scheduling and the other helpers use only Node.js and their declared command dependencies. `flock` is an explicit external utility because Node.js 22 has no built-in advisory file lock API.
+
+The lock subprocess holds the same `.state.lock` or layout `.lock` inode as the previous PHP runtime, through the complete read/check/write operation. Waiting processes acquire it serially. A child exit or crash closes the kernel lock; no PID timeout or stale-file deletion is used. Keep lock files in place. Old PHP and new Node helpers therefore interoperate on existing durable records during rollout. Private `--locked` dispatch is internal to the lock subprocess and is not a supported invocation.
+
+JSON is serialized before publication. A uniquely created temporary file in the destination directory is written, synchronized, closed, and renamed over the destination; failure removes only that temporary file. Target symlinks are rejected. Existing schema versions, ownership fields, approval hashes, revisions and result contracts remain unchanged. JSON integer fields require exact safe integers, and decimal or exponent tokens retain their non-integer type for validation. Integers outside JavaScript’s exact safe range are rejected rather than rounded silently. The shared runner uses the running Node executable, preserves argument arrays and terminal streams, reserves each exit-record path before spawning, and records nonzero exits, signals and spawn errors. A retained `.runner` reservation after a crash requires reconciliation of that exact worker before a new job and exit path are prepared.
+
+API references: [Node.js release status](https://nodejs.org/en/about/previous-releases), [Node.js 22 filesystem APIs](https://nodejs.org/docs/latest-v22.x/api/fs.html), and [Node.js 22 subprocess APIs](https://nodejs.org/docs/latest-v22.x/api/child_process.html). In particular, `spawnSync` reports `status`, `signal`, and `error` separately; `fs.openSync` with `wx`, `fs.fsyncSync`, and `fs.renameSync` provide the write mechanics.
 
 ## Context and Invalidation
 
