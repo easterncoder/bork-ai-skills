@@ -1,0 +1,21 @@
+# Lifecycle Owner
+
+Read only as goodcode or standalone review owner. Workers use the common contract.
+
+## Ownership and Lifecycle
+
+- Resolve the repository root; keep `.status` and `.review` there. Refuse tracked coordination files and preserve unrelated changes.
+- In standalone mode, store retained records under the worktree-specific absolute path returned by `git rev-parse --path-format=absolute --git-path bork-review-loop`. In orchestrated mode, use `<absolute-common-git-dir>/bork-goodcode/<base-owner>/<base-repo>/pr-<number>`, resolving the common directory with `git rev-parse --path-format=absolute --git-common-dir`. The per-PR lock and active-run pointer live there too. This prevents concurrent runs against the same PR and preserves records when Git removes temporary worktree metadata. Each invocation uses a unique run directory with `session.json` and numbered cycle/pass directories. Never stage these records.
+- `session.json` records run ID, mode (`orchestrated` or `standalone`), repository, worktree, branch, PR URL, lifecycle owner, and current cycle. Orchestrated sessions also record the original checkout, temporary branch, PR head/base repositories, remote head branch, and explicit push destination; the local temporary branch is intentionally different from the PR branch. Pass the absolute run directory to both agents; standalone agents discover it through `active.json` in the records root.
+- Acquire a run lock using exclusive directory creation in the records root before initialization. The lifecycle owner holds it through the run. If a lock or active run exists, inspect its metadata and resume only an identified, inactive run. Never overwrite a live or ambiguous run or automatically reset leftover state.
+- In orchestrated mode, only `bork-goodcode` initializes cycles and cleans up. In standalone mode, only `bork-review` initializes; `bork-fix` waits for initialization. Missing or empty status after initialization is an inconsistency, never an instruction to restart.
+- Preserve pre-existing local ignore entries. Locally exclude `.status`, `.review`, and the transient `.status.lock/` for the run; remove only entries added by this run after successful cleanup.
+- Each new cycle starts at `coded`, with starting HEAD recorded. Never reset a cycle while either worker is running.
+- Neither worker deletes coordination files in orchestrated mode. On `good`, each saves its own completion acknowledgment in the cycle directory and exits. The orchestrator cleans up only after both agents exit, acknowledgments exist, follow-up succeeds, and the overall loop ends. In standalone mode, review acknowledges completion and waits for the fix acknowledgment before owner cleanup; an explicitly review-only invocation may clean up without a fixer.
+- In orchestrated mode, retain the active-run pointer and lifecycle lock until the worktree cleanup required by `bork-goodcode` succeeds. Preserve cleanup-pending state on removal failure.
+- Successful cleanup removes owned `.status`, `.review`, `active.json`, and the run lock, but retains all run records. On an operational blocker, preserve state, stop the peer safely, and report recovery information. Release the lock only after both workers stop; retain `active.json` marking the run blocked. Never silently start a new run over it.
+
+
+## Host Boundary
+
+Detect the invoking host's native delegation capabilities once and save them in `session.json`. Use the host's own agent launch/resume/wait mechanism; the JSON brief below is its payload. Do not invent provider-specific API calls or shell-launch an AI CLI as an implicit fallback. In an explicit `bork-doitall` run, goodcode is a native child of the target master and review/fix are native children of goodcode for either batch `execution_driver`. If native delegation cannot run both workers concurrently at this depth, report that limitation to the master; standalone review/fix can coordinate across separately launched sessions. Missing PHP/Git/required GitHub access is a named dependency blocker. Do not install dependencies or improvise a replacement helper silently. A user-authorized equivalent CLI or connector may supply GitHub data if it preserves explicit repository identity and pagination.

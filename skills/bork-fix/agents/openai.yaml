@@ -1,0 +1,6 @@
+interface:
+  display_name: "BORK Fix"
+  short_description: "Looped review-fix commits for Mike"
+  default_prompt: "Use $bork-fix to wait for reviewed status, fix blocking findings from .review, commit them, and set .status to coded."
+policy:
+  allow_implicit_invocation: true

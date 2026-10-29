@@ -1,0 +1,112 @@
+---
+name: bork-goodcode
+description: Orchestrate PR review, fixes, pushes, and bot feedback until clean in a temporary worktree.
+---
+
+# BORK Goodcode
+
+Apply the shared [profile contract](../bork-doitall/references/profile.md) before starting. Preserve any supplied profile in nested calls; default to `generic`.
+
+## Goal and Shared Contract
+
+Always run `bork-review` and `bork-fix` concurrently in a dedicated temporary git worktree, and push any completed fixes. For draft PRs, finish after the internal tandem reaches `good` and any fixes are pushed. For ready PRs, follow up on evaluated review threads and repeat the bot-feedback loop until a verified clean cycle creates no commits.
+
+Before starting, read [the shared coordination contract](../bork-review/references/coordination.md). Own initialization, cycle boundaries, retained follow-up records, and cleanup. Read [owner lifecycle](../bork-review/references/owner-lifecycle.md) once. Workers load their named skill and the common contract, not owner-only references. Only the fixer edits or commits source changes.
+
+## Explicit Doitall Execution
+
+When invoked by doitall, read [extra instruction routing](../bork-doitall/references/instruction-routing.md) and load its `instruction_paths`. Preserve orchestration constraints and forward the relevant role-specific paths to review and fix in every cycle, including resumed sessions and the separate ready run. Verify instruction dispositions before accepting completion. Require the master's unique absolute `result_path` and `phase` (`draft_goodcode` or `ready_goodcode`) in the brief; report a blocker if either is missing. Keep the path fixed across a resumed invocation.
+
+When `bork-doitall` supplies a task brief, accept its explicit `pr_url` instead of inferring a PR from the current checkout branch. Validate the supplied repository, author and PR identity. Run as a native child of the target master and delegate review/fix as native children of this goodcode agent, whether the batch's `execution_driver` is `native` or `tmux`. Read [doitall agent execution](../bork-doitall/references/panes.md) once. Verify nested delegation and capacity before starting the worktree; if unavailable, report the blocker to the master without switching drivers. Pass compact briefs and durable record paths to workers, avoiding the full batch transcript. Constrain model selection to the invoking host's supported models and retain the recency rules and the [effort tiers](references/effort-tiers.md). All worktree, phase ownership, draft gates and external follow-up rules still apply. Use the brief's instruction-resolved `commit_email` for workers and signature/author verification. Outside explicit doitall mode, keep normal native delegation. Accept an explicit PR number or URL, resolving its repository from the URL, supplied repository, or unambiguous checkout. Use current-branch discovery only when no target was supplied; an invalid explicit target never falls back to another PR.
+
+Own the PR review cycle, pushes and documented follow-up. Leave ready promotion, selected-reviewer promotion gate and merge decisions to the target master. Relay worker questions or approval prompts to the master with role, agent ID and exact prompt. Confirm both workers stopped, then atomically write the durable goodcode result at the supplied `result_path` before reporting completion to the master. Include `run_id`, `phase`, `status` (`complete` or `blocked`), `pr_url`, `review_mode`, `reviewed_head`, `published_head`, `approval_commit` (the commit of the latest selected-reviewer approval, when one exists, and whether it equals `published_head`), `workers_stopped`, `cleanup_success`, `baseline_path`, `validation_path`, instruction dispositions, worker IDs/statuses, cleanup outcome, and any blocker with recovery action. Set both Boolean fields true only after confirming both workers stopped and safe worktree cleanup succeeded. Write a blocked result too. Never report success from the agent's final message alone.
+
+## Draft PR Mode
+
+Read the explicit PR's `isDraft` during initial discovery and persist `review_mode` as `internal_only` for draft PRs or `bot_loop` for ready PRs in `session.json` and worker briefs. If draft state cannot be determined, report the access/context blocker instead of assuming ready.
+
+- `internal_only`: let review and fix alternate as many passes as needed to reach `good`; retain existing feedback as review context. Verify and push any new signed fix commits, then perform normal safe cleanup. A clean tandem with no commits completes without pushing.
+- Skip thread replies/resolutions, bot qualification and review requests, and all post-push automation/quiet-period waits in this mode. Record those phases as `skipped_draft`, not completed automation. A push may trigger automation independently; do not chase it or start another cycle for its feedback. Local validation and evaluation of already available feedback still apply.
+- Refresh `isDraft` before external follow-up, immediately before each review request, on resume, and alongside each automation poll. If a ready PR becomes draft, switch to `internal_only`, preserve already completed actions, and finish the current internal tandem/push if needed before cleanup. Do not wait for already requested bots.
+- Once a run selects `internal_only`, keep that mode for the rest of the run even if the PR becomes ready. A later invocation can run the ready-PR workflow. Never change the PR's draft state yourself.
+
+## Imported Evidence
+
+Accept optional `baseline_path` and `validation_path` from the doitall brief. Import them using [evidence reuse](../bork-review/references/reuse.md), after fresh identity/context checks. Pass validated candidate paths to review; never mark a new run clean from the previous run's outcome. Missing or invalid review evidence falls back to a full review. Invalid test evidence causes relevant checks to run again. Export final baseline and validation paths in the durable result for the next phase.
+
+## Resolve Models
+
+Once at the start of the run, cache the host capabilities and selected models in `session.json`. Re-resolve if a selected model or delegation capability becomes unavailable or a cached selection violates the exclusions below:
+
+1. Query the current host's model catalog or native delegation interface.
+2. Consider models that the host permits for coding subagents. Never use Fable to access or run Claude unless the user explicitly instructs you to use Fable for Claude. Exclude Claude options that require Fable by default, including during fallback selection, retries, and stall recovery; a request to use Claude alone does not authorize Fable.
+3. When running in Codex, never select or run Astra models, including `gpt-6-astra` and any Astra aliases or variants. Apply this exclusion before ranking and during native delegation, fallback selection, retries, stall recovery, and resumed sessions. Re-resolve cached Astra selections and replace affected worker sessions with eligible models before continuing; pass this exclusion to all workers for any further delegation. If no eligible model remains, stop and report the blocker.
+4. Rank distinct eligible models by documented release or version recency. Apart from the explicit exclusions above, do not hardcode vendor names, model names, aliases, or dates.
+5. Choose the PR's effort tier and assign models and reasoning or effort to `bork-review` and `bork-fix` under [effort tiers](references/effort-tiers.md). Honor an `effort_override` supplied in the brief, and cache the tier with the model bindings.
+
+If the host exposes only one eligible model, use it for both agents and report the fallback. If the host cannot expose release ordering, use its native newest and next-newest model aliases or recommendations. Stop if neither method can resolve a model safely.
+
+If the host's delegation interface exposes no reasoning or effort control, require the tier's reasoning effort in each agent's prompt instead and report the substitution.
+
+## Preconditions and Worktree Setup
+
+1. From the original checkout, resolve the repository root, confirm `gh` authentication, and resolve the explicit PR number or URL when present, otherwise its current branch's open PR. Record the original path, branch, HEAD, and worktree state. Resolve and retain the PR URL/number, base repository, head repository, head branch, base branch, remote head SHA, and `isDraft` before switching directories; select Draft PR Mode. Support fork PRs by resolving their actual head repository and writable push destination; never assume `origin` is the head repository.
+2. Confirm both worker skills and their shared reference are available. Do not copy, stash, reset, stage, commit, or publish the original checkout's local changes or unpublished commits. The run starts from the fetched remote PR head; report any original local commits excluded from that starting point.
+3. Resolve the persistent per-PR records root under the common Git directory as defined in the shared contract. Acquire its lifecycle lock before creating a worktree. If a run already exists, use Resume a Run; never create a second worktree for the same active PR run.
+4. Fetch the PR head and base from their recorded repositories without changing the original local branch. Verify the fetched head matches the PR's current remote head SHA. Create a unique temporary branch and worktree, for example `git worktree add -b bork-goodcode/pr-<number>-<suffix> /tmp/bork-goodcode-<repo>-<number>-<suffix> <verified-head-sha>`. Never check out the original PR branch a second time or use `--force` to bypass worktree protections.
+5. Record original checkout, temporary worktree, temporary branch, explicit PR identity, push destination, and initial remote HEAD in `session.json`. All review, fixes, tests, and coordination files belong in this dedicated worktree, even if invocation already started inside another worktree. Pass both workers its absolute path, temporary branch, explicit PR identity, and persistent run directory. Every PR API operation must use the recorded PR URL or number with explicit repository, not infer a PR from the temporary branch.
+6. Before installing dependencies, inspect the original checkout for needed ignored/untracked dependencies, fixtures, caches, or local test configuration. Link only support paths that will be read without modification and are absent from the temporary worktree. Copy or recreate anything tests/installers may modify, and any fixture or config that needs editing. Never link editable source. Record support paths, keep them out of staging, and check worktree status after setup.
+7. Load applicable repository instructions inside the new worktree, then initialize cycle state under the shared contract. Use the original checkout only for setup and final worktree removal. Never advance, reset, or switch its local branch after pushing fixes.
+
+## Cycle
+
+1. Reuse the resolved models and saved role session IDs where supported, record `cycle_start_head`, and initialize a new cycle at `coded` only when no previous workers remain active.
+2. Resume the existing review and fix sessions concurrently when the host supports it; otherwise launch fresh workers from compact durable records. Follow [worker session reuse](../bork-review/references/reuse.md). Use native delegation for both workers in either doitall driver mode, with the resolved models at their tier's effort. Supply the same dedicated worktree, explicit PR identity and head/base repositories, persistent run directory, cycle, expected temporary branch/HEAD, and `orchestrated` mode. Build runtime `brief.json` using the `brief` action so workers reuse resolved facts. Save provider session IDs and model/role bindings; each new cycle gets fresh brief and acknowledgment paths. Require each worker to load its named skill and shared references once per agent session. In `bot_loop` mode, when the supplied profile explicitly enables a checklist rehearsal for the selected reviewer, add `bot_rehearsal` and that checklist's instructions to the review worker's prompt (not `brief.json`, whose fields are fixed) before any manual bot request. Pass the resolved review profile to both workers as a scoped instruction; resolve it per [review profile](../bork-doitall/references/profile.md) when none was passed.
+3. Wait while their coordination progresses. Keep orchestration waits bounded to at most 60 seconds per call and continue within the active turn. Never take over review or source fixes.
+4. A worker exit without its completion acknowledgment is a stall unless status is `blocked`. Resume that worker with its existing context and require reconciliation of saved records and any completed mutation. Do not restart the cycle or overwrite its state. On `blocked`, safely stop the peer and report the durable blocker record.
+5. Require both workers to finish their cycle turns successfully with matching completion acknowledgments and status `good`. Read compact indexes and changed review/fix outcomes for the cycle, including referenced earlier-pass outcomes needed for follow-up; keep full records on disk. Record `cycle_end_head` and verify the branch is unchanged, HEAD matches the final reviewed SHA, and every new commit is accounted for by a fixer record.
+6. Before cleanup of a successful draft run, export the final reviewer baseline under [evidence reuse](../bork-review/references/reuse.md) and retain any validation manifest. If HEAD changed, reuse per-SHA signature/author results from the fixer, verify only any unverified new commits with the runtime helper, and confirm all commits belong to this cycle and are safe to publish under the preconditions. Recheck the remote PR head against the last recorded remote SHA, then push with an explicit destination: `git push <recorded-head-remote-or-url> HEAD:refs/heads/<recorded-pr-head-branch>`. Never use the temporary branch name as the remote destination or rely on upstream inference. Verify the PR remote head equals `cycle_end_head` and record it before follow-up. Invocation authorizes pushing commits created by the fixer during this run. Never force-push. Stop on push failure, unexpected remote movement, or unexplained commits.
+7. Apply Draft PR Mode before external follow-up. If `internal_only`, record the skipped external phases and finish with owner cleanup/worktree removal now, even when this cycle created commits. Otherwise complete Review Thread Follow-up, including required out-of-scope tracking issues and timestamped PR body entries, whether or not this cycle created commits. Stop with follow-up incomplete if required issue tracking, a PR body update, a reply, or a resolution fails.
+8. Record the cycle's re-review triggers after follow-up: `code_pushed` when this cycle pushed a new HEAD, and `review_issue_created` when this cycle created a verified issue from a valid blocking or important review finding because changes were requested. Retain the issue URL and source review provenance. If neither trigger occurred, complete owner cleanup and worktree removal below. Retain run records outside the temporary worktree.
+9. If either or both triggers occurred, enforce the reply-before-request gate in [Re-request Bot Reviews](references/github-follow-up.md#re-request-bot-reviews), then evaluate bot qualification, request one fresh review per eligible bot for the combined cycle trigger, wait under the rules below, and begin a new cycle. A same-SHA `review_issue_created` trigger must not exit at the old clean-HEAD gate. Do not issue duplicate requests when both triggers occurred.
+
+## Loop Guard
+
+Persist the cycle count and each cycle's finding IDs and commit SHAs in `session.json`.
+
+- **No progress:** if a tandem pass produces no new finding IDs and no new commits yet the cycle still has not reached `good`, the workers are re-litigating. Stop, preserve records, and report a blocker naming the repeated findings.
+- **Round cap:** in `bot_loop` mode, stop and report after 5 completed cycles without a verified clean cycle. In `internal_only` mode use 8 internal passes before applying the same stop.
+- **Oversized PR:** when a cap or no-progress stop triggers, or the PR already sprawls across unrelated concerns at the first cycle, say the PR is too big. Recommend splitting into independently reviewable PRs, name concrete seams from what the diff touches, and separate mechanical churn from behavioral change. Reviewers find new things forever on a large diff while converging fast on a small one.
+
+A guard stop is a `blocked` durable result with the recovery action, never a silent success. Tier escalation after two cycles that do not reach `good` is separate from these stops; see [effort tiers](references/effort-tiers.md#escalate).
+
+## Resume a Run
+
+Locate the retained per-PR session from the original repository before creating any new worktree. Resume its recorded temporary worktree and branch only after verifying their identity and state. If that worktree is missing or its provenance is unclear, report a blocker; never silently reconstruct it or use the original checkout for fixes.
+
+Persist the cycle start/end SHAs and completed phases: tandem, push, thread follow-up, bot requests, and automation wait. On resume, reconcile local and remote HEAD plus external results against those records, refresh draft state under Draft PR Mode, then finish the first applicable incomplete phase. For `internal_only`, skip unfinished external phases; a recorded clean tandem and verified push can proceed directly to cleanup without starting new workers. A successful push followed by a failed reply must resume follow-up for that same cycle, preserving its bot qualification mappings. Do not launch fresh workers, redefine the cycle start, or repeat a push/request merely because the parent restarted. Reacquire lifecycle ownership only after confirming the old workers have stopped.
+
+## External Follow-up
+
+In worker briefs, require the reviewer to apply [External Change Requests](../bork-review/SKILL.md#external-change-requests): valid requests with even a slight concrete connection to the PR belong in the fixer's blocking handoff and must be fixed in this PR. Only wholly unrelated, valid, important external findings may be treated as out of scope and non-blocking, including findings originally presented as blocking. Retain those unrelated findings in `review.json` with evidence, impact, an explicit explanation of why no connection exists, and suggested follow-up. The reviewer owns this judgment; if the disposition is ambiguous or a proposed deferral has any concrete connection to the PR, return it to the reviewer before external follow-up or issue creation.
+
+For `bot_loop` only, at the first completed tandem cycle read [GitHub follow-up and automation](references/github-follow-up.md). It defines tracking issues, timestamped PR body entries, thread replies, bot qualification, re-review triggers and completion rules referenced by the cycle. Reuse it for later cycles; only interpret changed scoped feedback. Invocation authorizes creation of the scoped follow-up issues and their PR body entries, and retains the reply, resolution and push authorization stated there and in the cycle. Draft runs skip issue creation and PR body updates along with other external follow-up.
+
+## Worktree Cleanup and Final Response
+
+- Remove the temporary worktree only after the complete loop succeeds, both workers have stopped, required follow-up is verified or explicitly `skipped_draft`, every fix commit is present on the remote PR branch, and no uncommitted user/source work remains. A zero-commit clean run qualifies too.
+- First remove owned coordination files and explicitly recorded disposable support links/artifacts. Never delete unknown untracked files, follow support symlinks during cleanup, force worktree removal, or discard ignored files without checking their ownership. If safe removal is not possible, preserve the worktree and report why.
+- Return to the original repository root and run `git worktree remove <recorded-worktree-path>`. Verify removal. Retain the temporary branch unless it can be deleted normally with `git branch -d` after confirming its tip is published; never force-delete it. Do not delete the remote PR branch.
+- Keep the lifecycle lock through cleanup. Only after removal succeeds, clear the active-run pointer and release the lock while retaining the persistent run records. If removal fails, retain discoverable cleanup-pending state for retry; do not restart the tandem on that retry.
+- On a blocker, preserve the worktree, temporary branch, and records. Save the PR URL, worktree path, branch, validation, exact blocker and recovery action; print the blocker and next action using the [TLDR format](../bork-review/references/reporting.md). On success, save PR URL, validation, draft skips, retained record paths, baseline/validation paths and cleanup results in the durable result. Print only the [TLDR report](../bork-review/references/reporting.md).
+
+## Safety
+
+- Only the `bork-fix` worker edits or commits source changes. The orchestrator owns external follow-up and coordination lifecycle.
+- Never stage or commit coordination files or retained records.
+- Push only when a cycle creates commits; preserve the fixer's signed Conventional Commits and author settings.
+- Stop on operational blockers, unresolved models, unsafe Git state, or incomplete external follow-up. Preserve records for recovery and report their location.
+
+## Legacy Run Names
+
+When resuming a run started before the BORK rename, reuse its recorded pre-rename run paths, locks, branches, worktrees, and worker IDs. Inspect that legacy namespace before initializing a new run; renaming the skill does not authorize duplicate work or migration of active records.

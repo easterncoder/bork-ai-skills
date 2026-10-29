@@ -1,0 +1,6 @@
+interface:
+  display_name: "BORK Review"
+  short_description: "Adversarial, evidence-backed PR review"
+  default_prompt: "Use $bork-review to wait for coded status, adversarially review the active PR by challenging assumptions and verifying failure paths, and update .review and .status."
+policy:
+  allow_implicit_invocation: true

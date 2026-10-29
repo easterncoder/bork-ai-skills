@@ -1,0 +1,21 @@
+# Evidence Reuse Across Phases
+
+## Draft to ready review
+
+After a clean draft tandem, retain `baseline.json` outside the worktree with `pr_url`, `base_repository`, `head_repository`, `reviewed_head`, `base_sha`, `instruction_hash`, `intent_hash`, `complete: true`, `review_path`, context snapshot paths, validation path, coverage, unresolved finding IDs and the run-wide finding-ID high-water mark. `review_path` points to the actual final reviewer record; retain all records it references. Hash actual applicable instruction content using repository-relative paths, not temporary absolute worktree paths. Hash product requirements separately from bot feedback and draft state, so a new review comment does not itself erase established source coverage. Incomplete or ambiguous product intent prevents reuse.
+
+Doitall passes this path to ready goodcode in its new run. The owner refreshes explicit PR identity, local/remote HEAD, base, instructions, product context and checks. Build `current` with matching identity/hash fields, `branch`, `head`, and `context_complete: true` only after complete collection. Call `reuse-review`. The reviewer checks provenance, full coverage and any unresolved findings before accepting the candidate. Import prior finding IDs with their source run references and advance the high-water mark; do not collide with or overwrite old IDs.
+
+An exact candidate carries forward source coverage but still evaluates all new/changed bot findings and current failures. A descendant candidate requires the complete delta plus affected contracts/callers/tests. A changed base, instructions, intent, missing evidence, dirty tracked content, divergent baseline or cross-cutting changes requires broader/full review. Never inherit `good`, old acknowledgments, authorizations, current check conclusions or follow-up completion from the prior run. Record imported coverage and its reason in the new review. If the previous review is unavailable, perform a full review.
+
+## Validation handoff
+
+Prify writes a durable `validation.json` and passes its path through its result and doitall's draft-goodcode brief. Preserve it through later goodcode phases. Each check records its exact command/arguments and working-directory semantics, tested committed tree (or actual dirty-input content hashes), configuration/dependency/fixture hashes, relevant environment/runtime versions, exit result, coverage and full log path. Never store credentials in environment evidence. Unknown inputs mean non-reusable evidence.
+
+The reviewer independently evaluates the implementation and whether saved coverage is sufficient. Reuse an individual passing check only when its tested inputs, command, configuration and environment match the current worktree. A matching commit alone does not establish matching ignored dependencies or test databases. Recompute content evidence, and rerun narrow checks when inputs or coverage are uncertain. A new required check or a newly relevant path still needs validation. Failed or incomplete required validation never becomes a pass through reuse. Append the reuse decision and original evidence path to the current validation record.
+
+## Worker sessions
+
+Within a goodcode run, keep provider session IDs per role/model after cycle completion. Resume the same role with the new brief through a documented host resume/follow-up mechanism; load unchanged skill instructions once per session. The new brief and durable records override conversational assumptions. Verify run, cycle, pass, role, branch, HEAD and base before work; reconcile any unfinished mutation first.
+
+Workers still acknowledge and stop at each cycle boundary, so orchestration and cleanup remain race-free. No duplicate live process may use the same role/session. A normal acknowledged exit permits resume for the next cycle; an unacknowledged exit is recovery of the current cycle. If resume is unavailable, expired, or incompatible with the selected model, start a fresh worker using compact records and report the fallback only in durable details. Do not weaken role separation or model/effort policy. Across draft/ready runs, import evidence into fresh workers because worktree/run identity changed.

@@ -1,0 +1,4 @@
+interface:
+  display_name: "BORK Prify"
+  short_description: "Draft PRs from GitHub issues"
+  default_prompt: "Use $bork-prify with issue 123 to implement the issue in a temporary worktree, open a draft PR, and remove the worktree."
