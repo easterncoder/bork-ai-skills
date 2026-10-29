@@ -1,0 +1,16 @@
+{
+  "name": "bork",
+  "version": "0.1.1",
+  "description": "Portable GitHub issue and pull request workflows with coordinated implementation, review, and fixes.",
+  "author": {
+    "name": "easterncoder",
+    "url": "https://github.com/easterncoder"
+  },
+  "repository": "https://github.com/easterncoder/bork-ai-skills",
+  "keywords": [
+    "github",
+    "skills",
+    "code-review",
+    "pull-requests"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "name": "bork-ai-skills",
+  "owner": {
+    "name": "easterncoder"
+  },
+  "plugins": [
+    {
+      "name": "bork",
+      "source": "./",
+      "description": "Portable GitHub issue and pull request workflows with coordinated implementation, review, and fixes."
+    }
+  ],
+  "description": "Private BORK skills for GitHub issue and pull request workflows."
+}

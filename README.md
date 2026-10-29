@@ -1,6 +1,6 @@
 # BORK AI Skills
 
-A private, skills-only plugin for GitHub issue and pull request workflows. Version 0.1.0.
+A private, skills-only plugin for GitHub issue and pull request workflows. Version 0.1.1.
 
 | Skill | Purpose |
 | --- | --- |
@@ -27,6 +27,24 @@ The plugin exposes its bundled skills using the host's plugin namespace. Select 
 
 If the same BORK skills are already installed individually, use one installation source to avoid duplicate entries. This repository does not replace or remove an existing installation automatically.
 
+## Install with Claude Code
+
+Git must have access to this private GitHub repository. In your terminal:
+
+```bash
+claude plugin marketplace add easterncoder/bork-ai-skills
+claude plugin install bork@bork-ai-skills
+```
+
+Restart Claude Code after installation. Invoke a bundled skill with its plugin namespace, for example:
+
+```text
+/bork:bork-doitall 123
+/bork:bork-goodcode 123
+```
+
+Inside Claude Code, the equivalent install commands are `/plugin marketplace add easterncoder/bork-ai-skills` and `/plugin install bork@bork-ai-skills`.
+
 ## Requirements and behavior
 
 Use a host with terminal access, Git, authenticated GitHub CLI (`gh`), PHP 8+, and Python 3 for the offline tests. Signing workflows need a configured signing key and signature verification trust. Goodcode needs native concurrent agents. Doitall needs the agent nesting/capacity in its skill, or its documented tmux fallback; tmux is required only for that fallback and its integration tests. A skills-only plugin does not supply these executables or credentials.
@@ -39,7 +57,9 @@ Each skill retains its own authorization boundaries. Doitall displays a plan and
 
 ```text
 plugin.json                         Portable Agent Plugins manifest
-.agents/plugins/marketplace.json    Private repository marketplace
+.agents/plugins/marketplace.json    Codex repository marketplace
+.claude-plugin/plugin.json          Claude Code compatibility manifest
+.claude-plugin/marketplace.json     Claude Code repository marketplace
 skills/bork-*/                      Seven skills and bundled references/helpers/tests
 ```
 
