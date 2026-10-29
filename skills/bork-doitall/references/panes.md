@@ -1,7 +1,7 @@
 # Agent Execution
 
 
-For batches carrying a layout journal, [shared layout](../../bork-doitall/references/layout.md) supersedes the separate-session/sibling-pane placement instructions below. Use the recorded role slot and retain its pane through target turnover. Existing approved runs and standalone launches without a journal keep their original lifecycle contract. Screen and Herdr App visual acceptance currently have explicit capability blockers; do not present their refusal adapters as implemented visible layouts.
+For batches carrying a layout journal, [shared layout](../../bork-doitall/references/layout.md) supersedes the separate-session/sibling-pane placement instructions below. Use the recorded role slot and retain its pane through target turnover. Existing approved runs and standalone launches without a journal keep their original lifecycle contract. App/hc and Screen use the verified public tree/display adapters described in that contract; enforce their precise context, geometry and recovery gates.
 
 For `execution_driver: hc`, follow the separate [hc contract](hc.md) for discovery, hidden interactive launches, turn acknowledgment, reuse and final shutdown. It supersedes exit-after-report runner instructions only for hc. Verified hc membership precedes every row in the legacy selection table below.
 

@@ -189,6 +189,63 @@ function inspectTarget(array $plan, string $id): array
     return ['event' => 'state', 'status' => $target['status']];
 }
 
+/** Resume one blocked target without replacing approval, phase or mutation evidence. */
+function resumeTarget(array &$plan, array $input): array
+{
+    $id = requiredText($input, 'target_id');
+    $target = targetAt($plan, $id, ['blocked']);
+    $evidencePath = requiredText($input, 'evidence_path');
+    $evidence = jsonFile($evidencePath);
+    foreach (['user_continuation', 'scope_unchanged', 'prior_master_stopped', 'children_reconciled'] as $flag) {
+        if (($evidence[$flag] ?? null) !== true) {
+            throw new RuntimeException('Resume evidence missing: ' . $flag);
+        }
+    }
+    requiredText($evidence, 'user_instruction');
+    $agent = requiredText($input, 'agent_id');
+    if (($evidence['batch_id'] ?? null) !== $plan['batch_id'] || ($evidence['target_id'] ?? null) !== $id
+        || ($evidence['approved_preview_sha256'] ?? null) !== hash('sha256', $plan['approved_preview'])
+        || ($evidence['prior_master_agent_id'] ?? null) !== ($target['master_agent_id'] ?? null)
+        || ($evidence['recovered_master_agent_id'] ?? null) !== $agent) {
+        throw new RuntimeException('Resume identity or approval differs from the blocked target.');
+    }
+    foreach ($target['mutations'] ?? [] as $mutation) {
+        if (($mutation['status'] ?? null) === 'pending') {
+            throw new RuntimeException('Reconcile uncertain mutations before resuming a target.');
+        }
+    }
+    foreach ($target['depends_on'] as $dependency) {
+        if ($plan['targets'][$dependency]['status'] !== 'complete') {
+            throw new RuntimeException('Resume dependency is not complete.');
+        }
+    }
+    if (schedule($plan)['active'] >= $plan['max_concurrency']) {
+        throw new RuntimeException('No concurrency slot is available for resume.');
+    }
+    $pr = $target['pr_url'] ?? null;
+    $head = $target['published_head'] ?? null;
+    if ($pr === null && isset($target['phase_records']['prify']['result_path'])
+        && is_file($target['phase_records']['prify']['result_path'])) {
+        $prior = jsonFile($target['phase_records']['prify']['result_path']);
+        $pr = $prior['pr_url'] ?? null;
+        $head = $prior['published_head'] ?? null;
+    }
+    if ($pr !== null) {
+        observedHead($input, $pr, $head);
+        if (($input['remote']['state'] ?? null) !== 'OPEN' || ($input['remote']['is_draft'] ?? null) !== true
+            || ($evidence['remote'] ?? null) !== $input['remote']) {
+            throw new RuntimeException('Resume requires matching fresh open-draft PR evidence.');
+        }
+    }
+    $target['resume_history'][] = ['blocker' => $target['blocker'] ?? null,
+        'prior_master_agent_id' => $target['master_agent_id'] ?? null, 'master_agent_id' => $agent,
+        'evidence_path' => $evidencePath, 'evidence_sha256' => hash_file('sha256', $evidencePath), 'resumed_at' => gmdate('c')];
+    $target['status'] = 'running';
+    $target['master_agent_id'] = $agent;
+    $plan['targets'][$id] = $target;
+    return ['event' => 'target_resumed', 'target_id' => $id];
+}
+
 /** Apply one checked transition to the approved plan. */
 function changePlan(?array $plan, array $input): array
 {
@@ -391,6 +448,8 @@ function changePlan(?array $plan, array $input): array
         $plan['targets'][$id]['result_path'] = $input['result_path'];
         $plan['targets'][$id]['merge_status'] = ($plan['merge_enabled'] ?? false) === true ? 'pending' : 'skipped_not_requested';
         $result = ['event' => 'target_complete', 'target_id' => $id];
+    } elseif ($action === 'target-resume') {
+        $result = resumeTarget($plan, $input);
     } elseif ($action === 'target-blocked') {
         $id = requiredText($input, 'target_id');
         targetAt($plan, $id, ['starting', 'running', 'waiting_review']);

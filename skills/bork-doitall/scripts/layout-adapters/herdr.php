@@ -54,7 +54,7 @@ function borkLayoutHerdrSplit(array $record, array $operation): string
     $axis = $operation['direction'] === 'right' ? 'width' : 'height';
     $total = $snapshot['panes'][$parent][$axis];
     /* Request the retained child's share; verify actual rectangles after creation. */
-    $ratio = ($total - $operation['size'] - 1) / ($total - 1);
+    $ratio = ($total - $operation['size']) / $total;
     $reply = borkLayoutHerdr($record['context'], ['pane', 'split', '--pane', $parent, '--direction', $operation['direction'],
         '--ratio', (string) $ratio, '--cwd', $record['cwd'], '--no-focus']);
     return field($reply['pane'] ?? [], 'pane_id');

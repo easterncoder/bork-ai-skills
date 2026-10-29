@@ -114,7 +114,7 @@ class LayoutTests(unittest.TestCase):
         split = json.loads(calls.read_text().splitlines()[-1])
         self.assertEqual(split[:6], ['pane', 'split', '--pane', 'w1:p1', '--direction', 'right'])
         self.assertIn('--no-focus', split)
-        self.assertAlmostEqual(float(split[split.index('--ratio') + 1]), 49 / 199)
+        self.assertAlmostEqual(float(split[split.index('--ratio') + 1]), 50 / 200)
 
     @unittest.skipUnless(shutil.which('tmux'), 'tmux unavailable')
     def test_real_geometry_focus_and_cleanup(self):

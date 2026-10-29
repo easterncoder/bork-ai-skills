@@ -1,7 +1,7 @@
 # hc Execution
 
 
-For batches carrying a layout journal, [shared layout](../../bork-doitall/references/layout.md) supersedes the separate-session/sibling-pane placement instructions below. Use the recorded role slot and retain its pane through target turnover. Existing approved runs and standalone launches without a journal keep their original lifecycle contract. Screen and Herdr App visual acceptance currently have explicit capability blockers; do not present their refusal adapters as implemented visible layouts.
+For batches carrying a layout journal, [shared layout](../../bork-doitall/references/layout.md) supersedes the separate-session/sibling-pane placement instructions below. Use the recorded role slot and retain its pane through target turnover. Existing approved runs and standalone launches without a journal keep their original lifecycle contract. App/hc and Screen use the verified public tree/display adapters described in that contract; enforce their precise context, geometry and recovery gates.
 
 Use `execution_driver: hc` for the separate herdr-core CLI, verified with hc 0.1.13. This is not the older Herdr TUI. Target masters retain native prify/goodcode children; goodcode's review/fix roles use the same hc lifecycle below. The shared [agent execution contract](panes.md) still owns scheduling, approval, roles and host capacity.
 

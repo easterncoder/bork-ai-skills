@@ -23,15 +23,24 @@ function borkLayoutWrite(string $path, array $record): void
 /** Read the selected driver's live snapshot without switching drivers. */
 function borkLayoutSnapshot(array $record): array
 {
+    if ($record['driver'] === 'hc') {
+        foreach ($record['resources'] ?? [] as $resource) {
+            if (isset($resource['visible_terminal'])) {
+                $record['context']['visible'][$resource['id']] = $resource['visible_terminal'];
+            }
+        }
+    }
     return match ($record['driver']) {
         'tmux' => borkLayoutTmuxSnapshot($record['context'], $record['coordinator']),
         'herdr' => borkLayoutHerdrSnapshot($record['context'], $record['coordinator']),
+        'hc' => borkLayoutAppSnapshot($record['context'], $record['coordinator']),
+        'screen' => borkLayoutScreenSnapshot($record['context'], $record['coordinator']),
         default => throw new RuntimeException('Visual adapter has no verified geometry interface.'),
     };
 }
 
 /** Verify placement identity, surrounding panes, geometry and preserved focus. */
-function borkLayoutVerify(array $record, bool $geometry = true): array
+function borkLayoutVerify(array $record, bool $geometry = true, bool $rendered = true): array
 {
     if (($record['pending'] ?? null) !== null) {
         throw new RuntimeException('Uncertain layout mutation requires reconciliation; do not repeat it.');
@@ -49,18 +58,26 @@ function borkLayoutVerify(array $record, bool $geometry = true): array
             && ($pane['owner'] !== $record['run_id'] || $pane['placement'] !== $placement)) {
             throw new RuntimeException('Pane ownership no longer matches this layout.');
         }
+        if ($record['driver'] === 'hc' && $placement !== 'coordinator' && $geometry && $rendered
+            && ($pane['cols'] < 35 || $pane['rows'] < 6)) {
+            throw new RuntimeException('Rendered App terminal is below usable worker bounds; preserve layout for recovery.');
+        }
+        if ($record['driver'] === 'hc' && isset($resource['actual_cells']) && $geometry && $rendered
+            && $resource['actual_cells'] !== [$pane['cols'], $pane['rows']]) {
+            throw new RuntimeException('Rendered App geometry changed for ' . $placement . ': expected ' . json_encode($resource['actual_cells']) . ', observed ' . json_encode([$pane['cols'], $pane['rows']]) . '; reconcile resize before new claims.');
+        }
         if ($geometry) {
             borkLayoutGeometry($record['plan']['slots'][$placement], $pane, $record['driver'] === 'herdr' ? 1 : 0);
         }
     }
     foreach ($record['original']['panes'] as $id => $pane) {
-        if ($id !== $record['coordinator']) {
+        if ((string) $id !== $record['coordinator']) {
             borkLayoutGeometry($pane, $snapshot['panes'][$id] ?? []);
         }
     }
     $ids = array_column($record['resources'], 'id');
     foreach ($snapshot['panes'] as $id => $pane) {
-        if (!isset($record['original']['panes'][$id]) && !in_array($id, $ids, true)) {
+        if (!isset($record['original']['panes'][$id]) && !in_array((string) $id, $ids, true)) {
             throw new RuntimeException('An unrelated pane appeared; reconcile before modifying the layout.');
         }
     }
@@ -78,17 +95,20 @@ function borkLayoutPreflight(array $input): array
     $capability = match ($driver) {
         'tmux' => borkLayoutTmuxCapabilities($context),
         'herdr' => borkLayoutHerdrCapabilities($context),
-        'hc' => borkLayoutAppCapabilities(),
-        'screen' => borkLayoutScreenCapabilities(),
+        'hc' => borkLayoutAppCapabilities($context),
+        'screen' => borkLayoutScreenCapabilities($context),
         default => throw new RuntimeException('Unsupported layout driver.'),
     };
     if (($capability['supported'] ?? true) === false) {
         return ['supported' => false, 'visual' => true, 'capability' => $capability];
     }
+    if ($driver === 'screen') {
+        $context = borkLayoutScreenContext($context, field($input, 'coordinator'));
+    }
     $record = ['driver' => $driver, 'context' => $context, 'coordinator' => field($input, 'coordinator')];
     $snapshot = borkLayoutSnapshot($record);
-    return ['supported' => true, 'visual' => true, 'capability' => $capability, 'snapshot' => $snapshot,
-        'plan' => borkLayoutPlan($input['concurrency'] ?? 1, array_intersect_key($snapshot['panes'][$record['coordinator']], array_flip(['x', 'y', 'width', 'height'])))];
+    return ['supported' => true, 'visual' => true, 'capability' => $capability, 'snapshot' => $snapshot, 'context' => $context,
+        'plan' => borkLayoutPlan($input['concurrency'] ?? 1, array_intersect_key($snapshot['panes'][$record['coordinator']], array_flip(['x', 'y', 'width', 'height'])), $driver === 'herdr' ? 0 : 1)];
 }
 
 /** Provision placeholders once, journaling every split before mutation. */
@@ -109,23 +129,48 @@ function borkLayoutCreate(array $input): array
     if (!preg_match('/^[a-zA-Z0-9_-]+$/D', $run) || !is_dir(field($input, 'cwd'))) {
         throw new RuntimeException('Invalid run identity or working directory.');
     }
-    $record = array_merge($input, ['version' => 1, 'state' => 'creating', 'context' => $input['context'] ?? [],
+    $record = array_merge($input, ['version' => 1, 'state' => 'creating', 'context' => $preflight['context'],
         'plan' => $preflight['plan'], 'capability' => $preflight['capability'], 'original' => $preflight['snapshot'],
         'resources' => ['coordinator' => ['id' => $input['coordinator'], 'state' => 'protected']], 'pending' => null]);
+    if ($record['driver'] === 'hc') {
+        $record['context']['root_area'] = $record['original']['root_area'];
+        $record['context']['core_id'] = $record['original']['tree']['core_id'];
+    }
     borkLayoutWrite($path, $record);
+    if ($record['driver'] === 'screen') {
+        $record = borkLayoutScreenPrepare($record);
+        borkLayoutWrite($path, $record);
+    }
     foreach ($record['plan']['operations'] as $index => $operation) {
         $record['pending'] = ['operation' => $operation, 'index' => $index, 'before' => borkLayoutSnapshot($record)];
         borkLayoutWrite($path, $record);
-        $id = $record['driver'] === 'tmux' ? borkLayoutTmuxSplit($record, $operation) : borkLayoutHerdrSplit($record, $operation);
+        $id = match ($record['driver']) {
+            'tmux' => borkLayoutTmuxSplit($record, $operation),
+            'herdr' => borkLayoutHerdrSplit($record, $operation),
+            'hc' => borkLayoutAppSplit($record, $operation),
+            'screen' => borkLayoutScreenSplit($record, $operation),
+        };
         $created = borkLayoutSnapshot($record)['panes'][$id] ?? null;
         if ($created === null) {
             throw new RuntimeException('Returned split pane cannot be verified; preserve pending intent.');
         }
         $record['resources'][$operation['new']] = ['id' => $id, 'state' => 'placeholder',
-            'idle_pid' => $created['pid'] ?? null, 'idle_command' => $created['command'] ?? null];
+            'idle_pid' => $created['pid'] ?? null, 'idle_command' => $created['command'] ?? null,
+            'terminal' => $created['terminal'] ?? null, 'created_ms' => $created['created_ms'] ?? null];
         $record['pending'] = null;
         borkLayoutWrite($path, $record);
         borkLayoutVerify($record, false);
+    }
+    if ($record['driver'] === 'screen') {
+        borkLayoutScreenSize($record);
+    }
+    if ($record['driver'] === 'hc') {
+        $snapshot = borkLayoutAppStable($record);
+        foreach ($record['resources'] as &$resource) {
+            $pane = $snapshot['panes'][$resource['id']];
+            $resource['actual_cells'] = [$pane['cols'], $pane['rows']];
+        }
+        unset($resource);
     }
     borkLayoutVerify($record);
     $record['state'] = 'ready';
@@ -151,6 +196,18 @@ function borkLayoutIdle(array $record, string $key): void
         if (!in_array($command, ['sh', 'dash'], true)) {
             throw new RuntimeException('Placeholder is not its original idle shell.');
         }
+    } elseif ($record['driver'] === 'hc') {
+        $terminal = borkLayoutAppRpc($record['context'], 'terminal.get', ['terminal' => $resource['terminal']]);
+        if (($terminal['created_ms'] ?? null) !== $resource['created_ms'] || ($terminal['state'] ?? null) !== 'live'
+            || ($terminal['argv'] ?? null) !== ['/bin/sh']) {
+            throw new RuntimeException('App placeholder terminal identity or shell changed.');
+        }
+        $pid = $terminal['pid'];
+        if (!in_array(trim(execute(['ps', '-p', (string) $pid, '-o', 'comm='])), ['sh', 'dash'], true)) {
+            throw new RuntimeException('App placeholder is occupied by another foreground process.');
+        }
+    } elseif ($record['driver'] === 'screen') {
+        $pid = borkLayoutScreenIdle($record, $resource);
     } else {
         $info = borkLayoutHerdr($record['context'], ['pane', 'process-info', '--pane', $resource['id']]);
         $info = $info['process_info'] ?? $info;
@@ -209,7 +266,7 @@ function borkLayoutRelease(array $input, array $record): array
         throw new RuntimeException('Release requires a durable terminal role result.');
     }
     $record['history'][] = ['placement' => $key, 'resource' => $resource, 'result_path' => $resultPath];
-    $record['resources'][$key] = array_intersect_key($resource, array_flip(['id', 'idle_pid', 'idle_command']));
+    $record['resources'][$key] = array_intersect_key($resource, array_flip(['id', 'idle_pid', 'idle_command', 'terminal', 'created_ms', 'actual_cells']));
     $record['resources'][$key]['state'] = 'placeholder';
     borkLayoutWrite(field($input, 'record'), $record);
     return $record['resources'][$key];
@@ -235,6 +292,9 @@ function borkLayoutCleanup(array $input, array $record): array
     $path = field($input, 'record');
     $record['state'] = 'cleaning';
     borkLayoutWrite($path, $record);
+    if ($record['driver'] === 'screen') {
+        return borkLayoutScreenCleanup($record, $path);
+    }
     foreach (array_reverse(array_keys($record['resources'])) as $key) {
         if ($key === 'coordinator') {
             continue;
@@ -244,6 +304,13 @@ function borkLayoutCleanup(array $input, array $record): array
         borkLayoutWrite($path, $record);
         if ($record['driver'] === 'tmux') {
             borkLayoutTmux($record['context'], ['kill-pane', '-t', $id]);
+        } elseif ($record['driver'] === 'hc') {
+            try {
+                borkLayoutAppCommand($record['context'], 'pane.close', ['pane' => $id]);
+                borkLayoutAppAwait($record['context'], $record['coordinator'], static fn (array $tree): bool => borkLayoutAppFind($tree['root'], $id) === null);
+            } finally {
+                borkLayoutAppRestoreFocus($record);
+            }
         } else {
             borkLayoutHerdr($record['context'], ['pane', 'close', $id]);
         }
@@ -282,6 +349,7 @@ function borkLayoutAction(string $action, array $input): array
             'inspect' => ['record' => $record, 'snapshot' => borkLayoutSnapshot($record)],
             'claim' => borkLayoutClaim($input, $record),
             'release' => borkLayoutRelease($input, $record),
+            'bind' => borkLayoutAppBind($input, $record),
             'cleanup' => borkLayoutCleanup($input, $record),
             default => throw new RuntimeException('Unknown layout action.'),
         };

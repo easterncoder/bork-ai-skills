@@ -44,8 +44,16 @@ function screenSessions(array $data): string
 function launchScreen(array $data, string $path): array
 {
     if (isset($data['layout_record'])) {
-        $capability = borkLayoutScreenCapabilities();
-        throw new RuntimeException($capability['reason']);
+        validateJob(readInput(field($data, 'job')));
+        $layout = readInput(field($data, 'layout_record'));
+        if ($layout['driver'] !== 'screen') {
+            throw new RuntimeException('Screen launch requires its recorded Screen layout.');
+        }
+        $placement = borkLayoutAction('claim', array_replace($data, ['record' => $data['layout_record']]));
+        $command = terminalCommand([PHP_BINARY, __DIR__ . '/tmux.php', 'run', $path], 'posix');
+        borkLayoutScreen($layout['context'], ['-p', $placement['id'], '-X', 'stuff', $command . "\n"]);
+        return ['session' => $layout['context']['session'], 'pane' => $placement['id'], 'role' => $data['role'],
+            'socket_dir' => $layout['context']['socket_dir'] ?? null, 'layout_record' => $data['layout_record']];
     }
     $role = field($data, 'role');
     $name = field($data, 'session_name');
@@ -88,7 +96,9 @@ try {
         'inspect' => ['window' => screenCommand($input, ['-Q', 'windows'])],
         'capture' => ['output' => screenCommand($input, ['-X', 'hardcopy', '-h', field($input, 'output')])],
         'interrupt' => ['output' => screenCommand($input, ['-X', 'stuff', "\x03"])],
-        'close' => ['output' => screenCommand($input, ['-X', 'quit'])],
+        'close' => isset($input['layout_record'])
+            ? throw new RuntimeException('Shared layout slots remain open; accept the stopped result, release the slot, then use owned layout cleanup.')
+            : ['output' => screenCommand($input, ['-X', 'quit'])],
         default => throw new RuntimeException('Unknown Screen action.'),
     };
     echo json_encode(['ok' => true, 'result' => $result], JSON_THROW_ON_ERROR) . "\n";
