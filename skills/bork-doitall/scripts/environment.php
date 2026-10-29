@@ -81,15 +81,17 @@ function detectEnvironment(callable $env, callable $run, callable $ancestor): ar
         if ($herdr['HERDR_ENV'] !== '1' || !$herdr['HERDR_PANE_ID'] || !$herdr['HERDR_SOCKET_PATH'] || !$herdr['HERDR_TAB_ID'] || !$herdr['HERDR_WORKSPACE_ID']) {
             throw new RuntimeException('Explicit Herdr context is incomplete; restore the managed pane environment.');
         }
+        /* The inherited caller ID remains an alias when a pane moves. */
         $pane = environmentHerdr(['pane', 'current', '--current'], $run)['pane'] ?? null;
         $process = environmentHerdr(['pane', 'process-info', '--current'], $run)['process_info'] ?? null;
-        if (!is_array($pane) || !is_array($process) || ($pane['pane_id'] ?? null) !== $herdr['HERDR_PANE_ID']
-            || ($pane['tab_id'] ?? null) !== $herdr['HERDR_TAB_ID'] || ($pane['workspace_id'] ?? null) !== $herdr['HERDR_WORKSPACE_ID']
+        if (!is_array($pane) || !is_array($process) || !is_string($pane['pane_id'] ?? null) || $pane['pane_id'] === ''
+            || !is_string($pane['tab_id'] ?? null) || $pane['tab_id'] === ''
+            || !is_string($pane['workspace_id'] ?? null) || $pane['workspace_id'] === ''
             || ($process['pane_id'] ?? null) !== $pane['pane_id'] || !is_int($process['shell_pid'] ?? null)
             || !$ancestor($process['shell_pid'])) {
             throw new RuntimeException('Explicit Herdr pane is stale or not an ancestor of this process; reconcile membership.');
         }
-        $contexts['herdr'] = ['active' => true, 'pane_id' => $pane['pane_id'], 'socket' => $herdr['HERDR_SOCKET_PATH'], 'shell_pid' => $process['shell_pid']];
+        $contexts['herdr'] = ['active' => true, 'pane_id' => $pane['pane_id'], 'tab_id' => $pane['tab_id'], 'workspace_id' => $pane['workspace_id'], 'socket' => $herdr['HERDR_SOCKET_PATH'], 'shell_pid' => $process['shell_pid']];
     }
     $tmux = $env('TMUX');
     $pane = $env('TMUX_PANE');

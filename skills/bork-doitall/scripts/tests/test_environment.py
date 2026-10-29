@@ -85,6 +85,24 @@ class EnvironmentTests(unittest.TestCase):
             data['commands'] = {}
             self.assertFalse(self.call(data)['ok'])
 
+    def test_moved_herdr_caller_resolves_live_identity(self):
+        """A moved caller retains its launch alias while current responses identify its live pane."""
+        data = self.fixture(herdr=True)
+        data['commands']['herdr pane current --current'] = json.dumps({'result': {'pane': {'pane_id': 'w2:p4', 'tab_id': 'w2:t3', 'workspace_id': 'w2'}}})
+        data['commands']['herdr pane process-info --current'] = json.dumps({'result': {'process_info': {'pane_id': 'w2:p4', 'shell_pid': 123}}})
+        result = self.call(data)
+        self.assertTrue(result['ok'], result)
+        context = result['result']['contexts']['herdr']
+        self.assertEqual((context['pane_id'], context['tab_id'], context['workspace_id']), ('w2:p4', 'w2:t3', 'w2'))
+        data['ancestors'] = []
+        self.assertFalse(self.call(data)['ok'])
+        data['ancestors'] = [123]
+        data['commands']['herdr pane current --current'] = json.dumps({'result': {'pane': {'pane_id': '', 'tab_id': 'w2:t3', 'workspace_id': 'w2'}}})
+        self.assertFalse(self.call(data)['ok'])
+        data['commands']['herdr pane current --current'] = json.dumps({'result': {'pane': {'pane_id': 'w2:p4', 'tab_id': 'w2:t3', 'workspace_id': 'w2'}}})
+        data['commands']['herdr pane process-info --current'] = json.dumps({'result': {'process_info': {'pane_id': 'w3:p9', 'shell_pid': 123}}})
+        self.assertFalse(self.call(data)['ok'])
+
     def test_selected_driver_capability_blocks_without_fallback(self):
         """Native availability cannot rescue a selected terminal driver."""
         for driver in ('herdr', 'tmux'):
