@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/provider-command.php';
+
 /** Quote a command for the verified terminal shell, independent of PHP's OS. */
 function terminalCommand(array $args, string $shell): string
 {
@@ -86,6 +88,7 @@ function validateJob(array $job): void
             throw new RuntimeException('CLI arguments must be strings without NUL bytes.');
         }
     }
+    validateProviderCommand($args);
     field($job, 'exit_record');
 }
 

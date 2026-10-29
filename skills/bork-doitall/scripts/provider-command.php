@@ -41,3 +41,13 @@ function providerCommandMode(array $argv): array
     }
     return ['interactive' => true, 'no_daemon' => $noDaemon];
 }
+
+/** Enforce embedded Codex execution across terminal launchers. */
+function validateProviderCommand(array $argv): array
+{
+    $mode = providerCommandMode($argv);
+    if (in_array(strtolower(basename($argv[0])), ['codex', 'codex.exe'], true) && !$mode['no_daemon']) {
+        throw new RuntimeException('Codex requires --no-daemon as a launch option; verify support with codex --help.');
+    }
+    return $mode;
+}

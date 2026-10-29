@@ -13,6 +13,14 @@ Require `HERDR_ENV=1` and inherited or verified recovered caller pane/session co
 
 Persist the resolved session identity, caller pane ID, installed version/capability evidence and resolved `cli_profile`. Use inherited environment values through the current host's environment API, not POSIX-specific variable syntax. Keep the same local session for the batch; do not target SSH machines or another host. Do not persist credentials. An API failure during execution requires reconciliation, not a switch to tmux or a new pane.
 
+## Codex caller and launch requirements
+
+Verify `codex --help` documents `--no-daemon`, then include it as a real launch option, preferably before the command or initial prompt in every BORK-owned Codex job, including masters and review/fix workers. The shared provider validator rejects missing flags, flags used as option operands and flag text inside a prompt before claiming a placement or submitting work. Both interactive Codex and supported `codex --no-daemon exec` modes retain the pane's environment. Keep normal permissions and explicit role/model/effort controls; never stop the shared daemon as a workaround.
+
+A daemon-backed coordinator may inherit missing or stale terminal variables. Discovery first checks inherited live membership and detects a visible shared Codex backend; stale or detached context attempts the existing unique same-user/cwd frontend recovery. Recovered membership replaces all inherited driver variables before live socket, pane and frontend ancestry checks. Ambiguous frontends, a changed cwd, unreadable procfs or unsupported hosts block safely. Recovery is an inference, not an authenticated Codex thread-to-frontend association. The installed 0.166.0 CLI help supplies no documented authenticated caller handoff; robust daemon support remains dependent on an upstream session-scoped association. Do not infer the caller from focus or newest PID.
+
+The [official daemon README](https://github.com/openai/codex/blob/main/codex-rs/app-server-daemon/README.md#platform-support) documents daemon startup environment sharing without per-client isolation. This explains the risk, but does not establish the reporter's exact failure. An ordinary-interactive versus `--no-daemon` A/B reproduction is still required to identify that failure's hypothesis; isolated fixtures and successful embedded worker launches do not substitute for it.
+
 ## Launch
 
 Before approval, discovery is read-only. After approval, reserve targets through the batch runtime before creating any pane. For each returned launch ID:
