@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/terminal-context.php';
 require_once __DIR__ . '/screen-context.php';
+require_once __DIR__ . '/hc.php';
 
 /** Run a local command with a bounded observation period and explicit environment. */
 function environmentCommand(array $args, ?array $environment = null): string
@@ -77,10 +78,10 @@ function environmentHerdr(array $args, callable $run): array
 /** Detect membership independently of workflow capacity or installed executables. */
 function detectEnvironment(callable $env, callable $run, callable $ancestor, ?string $expectedEnvironment = null): array
 {
-    if ($expectedEnvironment !== null && !in_array($expectedEnvironment, ['herdr', 'tmux', 'screen'], true)) {
+    if ($expectedEnvironment !== null && !in_array($expectedEnvironment, ['hc', 'herdr', 'tmux', 'screen'], true)) {
         throw new RuntimeException('Unknown expected terminal environment.');
     }
-    $contexts = ['herdr' => ['active' => false], 'tmux' => ['active' => false], 'screen' => ['active' => false]];
+    $contexts = ['hc' => detectHcContext($env, $run, $ancestor), 'herdr' => ['active' => false], 'tmux' => ['active' => false], 'screen' => ['active' => false]];
     $herdrKeys = ['HERDR_ENV', 'HERDR_PANE_ID', 'HERDR_TAB_ID', 'HERDR_WORKSPACE_ID', 'HERDR_SOCKET_PATH'];
     $herdr = array_combine($herdrKeys, array_map($env, $herdrKeys));
     if (count(array_filter($herdr, static fn ($value) => $value !== false && $value !== '')) > 0) {
@@ -126,13 +127,14 @@ function detectEnvironment(callable $env, callable $run, callable $ancestor, ?st
 function selectEnvironment(array $contexts, array $capabilities): array
 {
     $contexts['screen'] ??= ['active' => false];
-    foreach (['herdr', 'tmux', 'screen'] as $driver) {
+    $contexts['hc'] ??= ['active' => false];
+    foreach (['hc', 'herdr', 'tmux', 'screen'] as $driver) {
         if (!is_bool($contexts[$driver]['active'] ?? null)) {
             throw new RuntimeException('Missing verified membership: ' . $driver);
         }
     }
     $selected = 'native';
-    foreach (['herdr', 'tmux', 'screen'] as $driver) {
+    foreach (['hc', 'herdr', 'tmux', 'screen'] as $driver) {
         if ($contexts[$driver]['active']) {
             $selected = $driver;
             break;
@@ -150,7 +152,7 @@ function selectEnvironment(array $contexts, array $capabilities): array
 /** Validate additive selection evidence without reinterpreting legacy approvals. */
 function validateEnvironmentSelection(array $plan): void
 {
-    if (isset($plan['execution_driver']) && !in_array($plan['execution_driver'], ['native', 'tmux', 'screen', 'herdr'], true)) {
+    if (isset($plan['execution_driver']) && !in_array($plan['execution_driver'], ['native', 'hc', 'tmux', 'screen', 'herdr'], true)) {
         throw new RuntimeException('Unknown recorded execution driver.');
     }
     if (!array_key_exists('environment_selection', $plan)) {
@@ -159,6 +161,9 @@ function validateEnvironmentSelection(array $plan): void
     $selection = $plan['environment_selection'];
     if (!is_array($selection) || ($selection['version'] ?? null) !== 1) {
         throw new RuntimeException('Unsupported environment selection evidence.');
+    }
+    if (($selection['contexts']['hc']['active'] ?? false) === true) {
+        validateHcIdentity($selection['contexts']['hc']);
     }
     foreach (['herdr', 'tmux', 'screen'] as $driver) {
         $context = $selection['contexts'][$driver] ?? [];
@@ -176,12 +181,12 @@ function validateEnvironmentSelection(array $plan): void
 
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     try {
-        $terminalCommand = in_array($argv[1] ?? '', ['herdr', 'tmux', 'screen'], true) ? $argv[1] : null;
+        $terminalCommand = in_array($argv[1] ?? '', ['hc', 'herdr', 'tmux', 'screen'], true) ? $argv[1] : null;
         $input = $terminalCommand !== null ? ['expected_environment' => $terminalCommand] : json_decode(file_get_contents($argv[1] ?? 'php://stdin'), true, 512, JSON_THROW_ON_ERROR);
         $runtime = environmentRuntime($input['expected_environment'] ?? null);
         $contexts = detectEnvironment($runtime['env'], $runtime['run'], $runtime['ancestor'], $input['expected_environment'] ?? null);
         if ($runtime['frontend'] !== null) {
-            foreach (['herdr', 'tmux', 'screen'] as $driver) {
+            foreach (['hc', 'herdr', 'tmux', 'screen'] as $driver) {
                 if ($contexts[$driver]['active']) {
                     $contexts[$driver]['frontend'] = $runtime['frontend'];
                 }
@@ -195,6 +200,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
             $prefix = match ($terminalCommand) {
                 'tmux' => ['tmux', '-S', $contexts['tmux']['socket']],
                 'screen' => ['screen', '-S', $contexts['screen']['session_id'], '-p', $contexts['screen']['pane_id']],
+                'hc' => ['hc'],
                 default => ['herdr'],
             };
             if ($terminalCommand === 'screen' && !in_array($args[0], ['-Q', '-X'], true)) {
