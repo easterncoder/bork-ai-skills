@@ -101,6 +101,7 @@ calls = int(path.read_text()) + 1 if path.exists() else 1
 path.write_text(str(calls))
 if calls == 1:
     time.sleep(6)
+print("Remove dead screens with 'screen -wipe'." * 2)
 print('0 (coordinator)')
 ''')
         fake.chmod(0o700)

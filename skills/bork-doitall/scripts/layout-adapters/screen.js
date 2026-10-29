@@ -103,7 +103,8 @@ function borkLayoutScreen(context, args, confirm = true) {
   if (result.code !== 0) throw new Error('Screen control failed; retain mutation intent before reconciliation.');
   /* Preserve the polling interval between controls while Screen updates its display. */
   c.usleep(10000);
-  return result.output.trim();
+  /* Screen can prefix a valid query reply with its dead-client notice after a timed-out read. */
+  return (args.includes('-Q') ? result.output.replace(/^(?:Remove dead screens with 'screen -wipe'\.\s*)+/, '') : result.output).trim();
 }
 
 /** Read the inherited controlling tty only when stdin is a character device. */
