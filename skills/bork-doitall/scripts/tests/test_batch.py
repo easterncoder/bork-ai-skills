@@ -84,6 +84,98 @@ class BatchTests(unittest.TestCase):
         return self.call('phase-adopt', target_id='12', phase=phase, agent_stopped=True,
                          descendants_stopped=True, remote={'pr_url': PR, 'head': head})
 
+    def blocked_resume(self):
+        """Retain a pending original child and construct explicit recovery evidence."""
+        self.start(no_reviewer=True)
+        path = self.child('prify')
+        self.write('prify.json', {'phase': 'prify', 'status': 'blocked', 'pr_url': PR, 'published_head': HEAD})
+        self.assertTrue(self.call('target-blocked', target_id='12', master_stopped=True,
+                                  descendants_stopped=True, reason='original blocker', evidence_path=path)['ok'])
+        plan = json.loads(self.plan.read_text())
+        remote = {'pr_url': PR, 'head': HEAD, 'state': 'OPEN', 'is_draft': True}
+        evidence = {'batch_id': plan['batch_id'], 'target_id': '12',
+                    'approved_preview_sha256': hashlib.sha256(plan['approved_preview'].encode()).hexdigest(),
+                    'prior_master_agent_id': 'master-1', 'recovered_master_agent_id': 'master-2',
+                    'user_instruction': 'continue the same approved work', 'user_continuation': True,
+                    'scope_unchanged': True, 'prior_master_stopped': True, 'children_reconciled': True,
+                    'remote': remote}
+        return plan, evidence, remote
+
+    def test_target_resume_preserves_pending_phase_and_blocker(self):
+        """Resume the same original result without replaying phase or publication intent."""
+        before, evidence, remote = self.blocked_resume()
+        path = self.write('resume.json', evidence)
+        self.assertTrue(self.call('target-resume', target_id='12', agent_id='master-2', evidence_path=path, remote=remote)['ok'])
+        after = json.loads(self.plan.read_text())
+        self.assertEqual(after['state_revision'], before['state_revision'] + 1)
+        target = after['targets']['12']
+        self.assertEqual(target['status'], 'running')
+        self.assertEqual(target['master_agent_id'], 'master-2')
+        self.assertEqual(target['blocker'], before['targets']['12']['blocker'])
+        self.assertEqual(target['phase_records'], before['targets']['12']['phase_records'])
+        self.assertEqual(target['resume_history'][0]['blocker'], target['blocker'])
+        for key in before:
+            if key not in ('targets', 'state_revision'):
+                self.assertEqual(after[key], before[key])
+        self.write('prify.json', {'phase': 'prify', 'status': 'complete', 'pr_url': PR,
+                                 'published_head': HEAD, 'cleanup_success': True})
+        self.assertTrue(self.adopt('prify')['ok'])
+
+    def test_target_resume_preserves_history_and_rejects_linked_evidence(self):
+        """Keep completed intents and older recovery history while rejecting linked records."""
+        before, evidence, remote = self.blocked_resume()
+        target = before['targets']['12']
+        target['mutations'] = {'review_request': {'status': 'complete', 'head': HEAD}}
+        target['resume_history'] = [{'blocker': {'reason': 'older blocker'}, 'evidence_path': 'older.json'}]
+        self.plan.write_text(json.dumps(before))
+        path = self.write('resume.json', evidence)
+        linked = self.root / 'linked-resume.json'
+        linked.symlink_to(path)
+        self.assertFalse(self.call('target-resume', target_id='12', agent_id='master-2',
+                                   evidence_path=str(linked), remote=remote)['ok'])
+        self.assertEqual(json.loads(self.plan.read_text()), before)
+        self.assertTrue(self.call('target-resume', target_id='12', agent_id='master-2',
+                                  evidence_path=path, remote=remote)['ok'])
+        after = json.loads(self.plan.read_text())['targets']['12']
+        self.assertEqual(after['mutations'], target['mutations'])
+        self.assertEqual(after['resume_history'][:-1], target['resume_history'])
+        self.assertEqual(after['resume_history'][-1]['evidence_sha256'],
+                         hashlib.sha256(Path(path).read_bytes()).hexdigest())
+
+    def test_target_resume_rejects_unverified_continuation(self):
+        """Reject stale, active-owner, changed-scope and mismatched-remote recovery."""
+        before, evidence, remote = self.blocked_resume()
+        for field, value in [('user_continuation', False), ('prior_master_stopped', False),
+                             ('scope_unchanged', False), ('children_reconciled', False),
+                             ('prior_master_agent_id', 'unrelated'), ('approved_preview_sha256', 'wrong')]:
+            with self.subTest(field=field):
+                path = self.write('resume.json', {**evidence, field: value})
+                self.assertFalse(self.call('target-resume', target_id='12', agent_id='master-2', evidence_path=path, remote=remote)['ok'])
+                self.assertEqual(json.loads(self.plan.read_text()), before)
+        path = self.write('resume.json', evidence)
+        self.assertFalse(self.call('target-resume', target_id='12', agent_id='master-2', evidence_path=path, remote=remote, expected_revision=0)['ok'])
+        self.assertFalse(self.call('target-resume', target_id='12', agent_id='master-2', evidence_path=str(self.root/'missing.json'), remote=remote)['ok'])
+        self.assertFalse(self.call('target-resume', target_id='12', agent_id='master-2', evidence_path=path, remote={**remote, 'head': 'b'*40})['ok'])
+
+    def test_target_resume_rejects_pending_mutation_and_capacity(self):
+        """Never revive blocked targets over uncertain external actions or occupied slots."""
+        before, evidence, remote = self.blocked_resume()
+        path = self.write('resume.json', evidence)
+        for change in ('mutation', 'capacity', 'dependency', 'nonblocked'):
+            plan = json.loads(json.dumps(before))
+            if change == 'mutation':
+                plan['targets']['12']['mutations'] = {'ready': {'status': 'pending'}}
+            elif change == 'capacity':
+                plan['targets']['13'] = {'status': 'running', 'depends_on': []}
+            elif change == 'dependency':
+                plan['targets']['13'] = {'status': 'blocked', 'depends_on': []}
+                plan['targets']['12']['depends_on'] = ['13']
+            else:
+                plan['targets']['12']['status'] = 'running'
+            self.plan.write_text(json.dumps(plan))
+            self.assertFalse(self.call('target-resume', target_id='12', agent_id='master-2', evidence_path=path, remote=remote)['ok'])
+            self.assertEqual(json.loads(self.plan.read_text()), plan)
+
     def test_environment_selection_persistence_and_resume(self):
         """Retain the approved driver across a changed coordinator environment."""
         plan = self.approved_plan()

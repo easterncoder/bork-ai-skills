@@ -117,7 +117,8 @@ class EnvironmentTests(unittest.TestCase):
                                     input=json.dumps({'expected_environment': 'herdr', 'capabilities': CAPACITY}),
                                     cwd=directory, env=env, text=True, capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 1)
-        self.assertIn('reported herdr caller', json.loads(result.stdout)['error'])
+        self.assertRegex(json.loads(result.stdout)['error'],
+                         r'(Reported herdr membership is not visible|Cannot uniquely resolve the reported herdr caller)')
 
     def test_frontend_recovery_uses_unique_same_user_cwd_and_identity(self):
         """Recover only caller variables and reject competing or mismatched frontends."""

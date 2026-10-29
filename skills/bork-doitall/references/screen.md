@@ -1,5 +1,8 @@
 # GNU Screen execution
 
+
+For batches carrying a layout journal, [shared layout](../../bork-doitall/references/layout.md) supersedes the separate-session/sibling-pane placement instructions below. Use the recorded role slot and retain its pane through target turnover. Existing approved runs and standalone launches without a journal keep their original lifecycle contract. App/hc and Screen use the verified public tree/display adapters described in that contract; enforce their precise context, geometry and recovery gates.
+
 Screen is selected after verified Herdr and tmux membership and before native execution. A partial, stale or unverifiable Screen context blocks selection even when another driver has capacity. Installation alone does not establish membership. Pass `expected_environment: "screen"` when the user reports Screen. Existing approvals retain their recorded driver; legacy selection records without Screen context treat it as inactive.
 
 ## Discovery and context

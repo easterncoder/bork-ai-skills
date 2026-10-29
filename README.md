@@ -118,4 +118,13 @@ Packaging follows [OpenAI's plugin format](https://developers.openai.com/plugins
 
 GNU Screen execution uses the same role jobs, terminal runner and recovery gates as Herdr/tmux. See the [Screen contract](skills/bork-doitall/references/screen.md) for capabilities, navigation and lifecycle controls.
 
-The separate [hc execution driver](skills/bork-doitall/references/hc.md) verifies caller terminal/core identity and installed lifecycle capabilities. It launches hidden interactive agents, requires Codex `--no-daemon`, reconciles initial-task delivery and blocked prompts, and distinguishes accepted turns from final owned-process shutdown. `herdr-app` is optional and used only for requested visible UI changes. Offline hc fixtures run with `python3 -m unittest discover -s skills/bork-doitall/scripts/tests -p test_hc.py`.
+The separate [hc execution driver](skills/bork-doitall/references/hc.md) verifies caller terminal/core identity and installed lifecycle capabilities. It launches interactive agents, hidden in headless mode, requires Codex `--no-daemon`, reconciles initial-task delivery and blocked prompts, and distinguishes accepted turns from final owned-process shutdown. `herdr-app` is optional and used only for requested visible UI changes. Offline hc fixtures run with `python3 -m unittest discover -s skills/bork-doitall/scripts/tests -p test_hc.py`.
+
+
+## Visible workflow layout
+
+The [shared layout contract](skills/bork-doitall/references/layout.md) defines one coordinator column and up to three master bands, each with reviewer above fixer on the right. PHP helpers plan from actual geometry, journal ownership and stable role slots, reject uncertain/repeated creation, and remove only owned idle leaves. Tmux layout launches use the coordinator’s existing window; Herdr TUI uses its existing tab. Placeholders are ordinary shell panes, never filler agents.
+
+Private real tmux, Herdr TUI, Herdr App/hc and GNU Screen validation covers concurrency 1/2/3 geometry and owned cleanup. App/hc also verifies stable visible worker binding and restart reconciliation; Screen verifies exact display discovery and saved-layout restoration. Headless hc and existing approved helper inputs remain compatible. No shared app is opened automatically. Provider trust/crash paths and untested platforms remain explicit validation limits. See the contract for focus, geometry and recovery details.
+
+Run `PYTHONDONTWRITEBYTECODE=1 python3 skills/bork-doitall/scripts/tests/test_layout.py` for shared planner and isolated tmux validation.
