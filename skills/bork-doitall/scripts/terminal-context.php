@@ -104,10 +104,12 @@ function environmentRuntime(?string $expected): array
         return $runtime;
     }
     $directError = null;
+    $sharedBackend = false;
     if ($signals !== []) {
         try {
             detectEnvironment($runtime['env'], $run, $runtime['ancestor'], $expected);
-            if (!getenv('CODEX_THREAD_ID') || !terminalSharedBackend('/proc', getmypid())) {
+            $sharedBackend = (bool) getenv('CODEX_THREAD_ID') && terminalSharedBackend('/proc', getmypid());
+            if (!$sharedBackend) {
                 return $runtime;
             }
         } catch (Throwable $error) {
@@ -118,7 +120,7 @@ function environmentRuntime(?string $expected): array
         }
     }
     if (!is_dir('/proc/self')) {
-        if ($expected === null) {
+        if ($expected === null && !$sharedBackend) {
             return $runtime;
         }
         throw new RuntimeException('Detached terminal caller recovery needs local procfs; run discovery in the invoking terminal.');
@@ -131,6 +133,9 @@ function environmentRuntime(?string $expected): array
         throw new RuntimeException(($directError === null ? 'Missing or detached caller context. ' : 'Stale or inaccessible inherited caller context: ' . $directError . ' ') . $error->getMessage(), 0, $error);
     }
     if ($frontend === null) {
+        if ($sharedBackend) {
+            throw new RuntimeException('Cannot verify the caller for a shared backend: no unique frontend with terminal context in this working directory. Run Codex with --no-daemon in the invoking pane.');
+        }
         return $runtime;
     }
     /* Discard stale membership for other drivers before restoring the caller. */

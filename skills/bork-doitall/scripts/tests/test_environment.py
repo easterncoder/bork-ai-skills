@@ -203,6 +203,50 @@ echo json_encode(terminalSharedBackend($argv[2], 101));
                                     capture_output=True, text=True, check=True)
             self.assertFalse(json.loads(result.stdout))
 
+    @unittest.skipUnless(shutil.which('tmux') and shutil.which('cc') and Path('/proc/self').exists(),
+                         'local procfs, tmux and a C compiler required')
+    def test_shared_backend_without_frontend_blocks_public_discovery(self):
+        """A backend with live inherited membership cannot authorize its startup pane."""
+        with tempfile.TemporaryDirectory(prefix='backend-no-frontend-') as directory:
+            root = Path(directory)
+            socket = str(root / 'socket')
+            executable = root / 'codex'
+            source = root / 'backend.c'
+            output = root / 'output.json'
+            inputs = root / 'capacity.json'
+            inputs.write_text(json.dumps({'capabilities': CAPACITY}))
+            source.write_text(
+                '#include <unistd.h>\n#include <sys/wait.h>\n'
+                '/* Keep the backend visible as the discovery process ancestor. */\n'
+                'int main(int argc, char **argv) {\n'
+                '    if (argc != 4) return 2;\n'
+                '    pid_t child = fork();\n'
+                '    if (child == 0) { execlp("php", "php", argv[2], argv[3], (char *)0); _exit(127); }\n'
+                '    int result;\n'
+                '    waitpid(child, &result, 0);\n'
+                '    return WIFEXITED(result) ? WEXITSTATUS(result) : 1;\n'
+                '}\n'
+            )
+            subprocess.run(['cc', str(source), '-o', str(executable)], check=True, capture_output=True)
+            env = {key: value for key, value in os.environ.items()
+                   if not key.startswith(('HC_', 'HERDR_'))
+                   and key not in ('TMUX', 'TMUX_PANE', 'STY', 'WINDOW', 'SCREENDIR')}
+            env['CODEX_THREAD_ID'] = 'fixture-shared-backend'
+            command = shlex.join([str(executable), 'app-server', str(HELPER), str(inputs)]) + ' > ' + shlex.quote(str(output))
+            try:
+                subprocess.run(['tmux', '-S', socket, 'new-session', '-d', '-s', 'fixture',
+                                '-c', directory, command], env=env, check=True, capture_output=True)
+                for _ in range(100):
+                    if output.exists() and output.stat().st_size:
+                        break
+                    time.sleep(.02)
+                result = json.loads(output.read_text())
+                self.assertFalse(result['ok'], result)
+                self.assertIn('shared backend', result['error'])
+                self.assertIn('--no-daemon', result['error'])
+            finally:
+                subprocess.run(['tmux', '-S', socket, 'kill-server'], capture_output=True)
+
     def test_recovered_frontend_must_descend_from_the_pane_shell(self):
         """Detached backend ancestry is replaced only by the identified caller PID."""
         runner = r'''
