@@ -7,20 +7,23 @@ const argv = process.argv.slice(1),
   };
 
 /** Canonicalize maps without changing positional list ordering. */
-function canonical(data) {
+function canonical(data, legacyEmptyMaps = false) {
   data = c.clone(data);
   if (!c.is_array(data)) {
     return data;
   }
+  if (legacyEmptyMaps && !Array.isArray(data) && Object.keys(data).length === 0) {
+    return [];
+  }
   if (!c.equal(data, []) && !c.equal(c.array_keys(data), c.range(0, c.count(data) - 1))) {
     c.ksort(data);
   }
-  return c.array_map("canonical", data);
+  return c.array_map(value => canonical(value, legacyEmptyMaps), data);
 }
 /** Hash evidence with deterministic map ordering. */
 function evidenceHash(data) {
   data = c.clone(data);
-  return c.hash("sha256", c.json_encode(canonical(data), c.JSON_UNESCAPED_SLASHES | c.JSON_THROW_ON_ERROR));
+  return c.hash("sha256", c.json_encode(canonical(data, true), c.JSON_UNESCAPED_SLASHES | c.JSON_THROW_ON_ERROR));
 }
 /** Read an explicit JSON path, rejecting missing evidence. */
 function atPath(data, path) {

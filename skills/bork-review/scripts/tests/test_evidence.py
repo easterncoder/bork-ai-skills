@@ -1,5 +1,6 @@
 """Exercise evidence collection, review reuse and automation with offline API fixtures."""
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -101,6 +102,29 @@ sys.exit(int(os.environ.get('FAKE_EXIT', '0')))
         self.env['FAKE_SLEEP'] = '2'
         self.assertFalse(self.snap(spec, 'timeout.json', seconds=1)['ok'])
         self.assertFalse((self.root / 'timeout.json').exists())
+
+    def test_snapshot_accepts_legacy_empty_map_fingerprint(self):
+        """A PHP snapshot with nested empty maps remains reusable by Node."""
+        spec = self.api([self.page([])], graphql=True)
+        source = json.loads(Path(spec).read_text())
+        source['variables'] = {}
+        source['metadata'] = {'filters': {}}
+        Path(spec).write_text(json.dumps(source))
+
+        def legacy(value):
+            """Match PHP associative decoding for source fingerprint comparison."""
+            if isinstance(value, dict):
+                return {key: legacy(value[key]) for key in sorted(value)} if value else []
+            if isinstance(value, list):
+                return [legacy(item) for item in value]
+            return value
+
+        digest = hashlib.sha256(json.dumps(legacy(source), separators=(',', ':'), ensure_ascii=True).encode()).hexdigest()
+        previous = self.save('legacy.json', {'complete': True, 'source_hash': digest, 'entries': {}})
+        result = self.snap(spec, 'from-legacy.json', previous=previous)
+        self.assertTrue(result['ok'], result)
+        self.assertEqual(result['result']['event'], 'unchanged')
+        self.assertEqual(json.loads((self.root / 'from-legacy.json').read_text())['entries'], {})
 
     def test_mutation_and_conflicting_pagination_rejected(self):
         """Read-only collection refuses mutations and inconsistent duplicated IDs."""

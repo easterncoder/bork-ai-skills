@@ -85,12 +85,16 @@ function borkLayoutScreen(context, args, confirm = true) {
   const descriptor = fs.openSync(tty, 'r');
   let result;
   try {
-    result = c.processResult(['screen', '-S', session, ...args], {
-      env: c.object(environment),
-      timeout: 5000,
-      /* Screen may pass stderr to newly created windows; do not wait for their pipe closure. */
-      stdio: [descriptor, 'pipe', 'ignore']
-    });
+    const query = args.includes('-Q') && !args.includes('-X');
+    for (let attempt = 0; attempt < (query ? 5 : 1); attempt++) {
+      result = c.processResult(['screen', '-S', session, ...args], {
+        env: c.object(environment),
+        timeout: query ? 1000 : 5000,
+        /* Screen may pass stderr to newly created windows; do not wait for their pipe closure. */
+        stdio: [descriptor, 'pipe', 'ignore']
+      });
+      if (result.error?.code !== 'ETIMEDOUT') break;
+    }
   } finally {
     fs.closeSync(descriptor);
   }
@@ -100,6 +104,16 @@ function borkLayoutScreen(context, args, confirm = true) {
   /* Preserve the polling interval between controls while Screen updates its display. */
   c.usleep(10000);
   return result.output.trim();
+}
+
+/** Read the inherited controlling tty only when stdin is a character device. */
+function screenStdinTty() {
+  const fs = require('node:fs');
+  try {
+    return fs.fstatSync(0).isCharacterDevice() ? fs.readlinkSync('/proc/self/fd/0') : false;
+  } catch {
+    return false;
+  }
 }
 
 /** Resolve exact display membership without attaching or changing focus. */
@@ -144,7 +158,7 @@ function borkLayoutScreenContext(context, coordinator) {
     }
     return context;
   }
-  c.set(context, ["window_tty"], "??=", c.truth(c.getenv("TTY")) ? c.getenv("TTY") : c.truth(c.function_exists("posix_ttyname")) ? c.posix_ttyname(c.STDIN) : false);
+  c.set(context, ["window_tty"], "??=", c.truth(c.getenv("TTY")) ? c.getenv("TTY") : screenStdinTty());
   flags = c.clone(borkLayoutScreen(context, ["-Q", "windows", "%n|%f;"]));
   if (!c.truth(c.preg_match(c.string(c.string("/(?:^|;)\\s*") + c.string(c.preg_quote(coordinator, "/"))) + c.string("\\|([^;]*);/"), flags, _m => {
     found = _m;

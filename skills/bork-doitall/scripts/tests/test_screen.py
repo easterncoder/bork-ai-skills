@@ -3,6 +3,8 @@
 import itertools
 import json
 import os
+import pty
+import select
 import shutil
 import subprocess
 import tempfile
@@ -85,6 +87,75 @@ catch(error){console.log(require(require("node:path").resolve(require("node:path
                 self.assertEqual(result['ok'], supported, result)
                 if supported:
                     self.assertEqual(result['driver'], selected)
+
+    def test_read_query_retries_after_owned_timeout(self):
+        """A hung read query can be retried without replaying a mutation."""
+        binary = self.root / 'bin'
+        binary.mkdir()
+        fake = binary / 'screen'
+        count = self.root / 'calls'
+        fake.write_text('''#!/usr/bin/python3
+import os, pathlib, time
+path = pathlib.Path(os.environ['SCREEN_CALLS'])
+calls = int(path.read_text()) + 1 if path.exists() else 1
+path.write_text(str(calls))
+if calls == 1:
+    time.sleep(6)
+print('0 (coordinator)')
+''')
+        fake.chmod(0o700)
+        master, slave = pty.openpty()
+        try:
+            context = {'session': '123.fixture', 'window_tty': os.ttyname(slave)}
+            script = ('const screen=require(process.argv[1]);'
+                      'process.stdout.write(screen.borkLayoutScreen('
+                      'JSON.parse(process.argv[2]),JSON.parse(process.argv[3])));')
+            for args in (['-Q', 'number'], ['-p', '0', '-Q', 'title']):
+                count.unlink(missing_ok=True)
+                result = subprocess.run([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'),
+                                         '-e', script, str(SCRIPTS / 'layout-adapters/screen.js'),
+                                         json.dumps(context), json.dumps(args)],
+                                        env={**self.env, 'PATH': str(binary) + os.pathsep + self.env['PATH'],
+                                             'SCREEN_CALLS': str(count)}, text=True, capture_output=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, '0 (coordinator)')
+                self.assertEqual(count.read_text(), '2')
+        finally:
+            os.close(master)
+            os.close(slave)
+
+    def test_context_discovers_inherited_tty_without_environment(self):
+        """An attached private Screen window supplies its stdin tty when TTY is unset."""
+        output = self.root / 'tty-context.json'
+        script = ('const fs=require("node:fs");const screen=require(process.argv[1]);'
+                  'let result;try{result=screen.borkLayoutScreenContext('
+                  '{session:process.env.STY,socket_dir:process.env.SCREENDIR},process.env.WINDOW);}'
+                  'catch(error){result={error:error.message};}'
+                  'fs.writeFileSync(process.argv[2],JSON.stringify(result));')
+        env = {**self.env, 'TERM': 'xterm-256color'}
+        env.pop('TTY', None)
+        pid, display = pty.fork()
+        if pid == 0:
+            os.execvpe('screen', ['screen', '-m', '-S', 'ttycontext',
+                                  shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'),
+                                  '-e', script, str(SCRIPTS / 'layout-adapters/screen.js'), str(output)], env)
+        try:
+            deadline = time.monotonic() + 20
+            while not output.exists() and time.monotonic() < deadline:
+                if select.select([display], [], [], .1)[0]:
+                    try:
+                        os.read(display, 65536)
+                    except OSError:
+                        break
+            self.assertTrue(output.exists(), 'Private Screen context probe did not finish')
+            context = json.loads(output.read_text())
+            self.assertNotIn('error', context)
+            self.assertTrue(context['window_tty'].startswith('/dev/pts/'))
+            self.assertTrue(context['display_tty'].startswith('/dev/pts/'))
+        finally:
+            subprocess.run(['screen', '-S', 'ttycontext', '-X', 'quit'], env=env, capture_output=True, timeout=5)
+            os.close(display)
+            os.waitpid(pid, 0)
 
     @unittest.skipUnless(shutil.which('cc'), 'C compiler required')
     def test_detached_frontend_recovery_and_context_command(self):
