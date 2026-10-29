@@ -40,15 +40,15 @@ class ScreenTests(unittest.TestCase):
         self.counter += 1
         source = self.root / f'input-{self.counter}.json'
         source.write_text(json.dumps(data))
-        result = subprocess.run(['php', str(SCRIPTS / 'screen.php'), mode, str(source)],
+        result = subprocess.run([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), str(SCRIPTS / 'screen.js'), mode, str(source)],
                                 env=self.env, text=True, capture_output=True, timeout=10)
         return json.loads(result.stdout)
 
-    def launch(self, code='echo "visible fixture\\n";', role='master', name='fixture'):
-        """Prepare and launch a harmless PHP job through the shared runner."""
+    def launch(self, code='console.log("visible fixture");', role='master', name='fixture'):
+        """Prepare and launch a harmless Node.js job through the shared runner."""
         record = self.root / f'exit-{name}.json'
         job = self.root / f'job-{name}.json'
-        job.write_text(json.dumps({'argv': [shutil.which('php'), '-r', code], 'exit_record': str(record)}))
+        job.write_text(json.dumps({'argv': [shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), '-e', code], 'exit_record': str(record)}))
         data = {'role': role, 'cwd': str(self.root), 'job': str(job), 'session_name': name,
                 'socket_dir': str(self.sockets)}
         result = self.invoke('launch', data)
@@ -67,13 +67,11 @@ class ScreenTests(unittest.TestCase):
     def test_selection_priority_capacity_and_legacy_records(self):
         """Screen follows active tmux and blocks capacity failure without fallback."""
         runner = r'''
-require $argv[1];
-$x = json_decode(stream_get_contents(STDIN), true);
-try {
-    $selection = selectEnvironment($x['contexts'], $x['capabilities']);
-    validateEnvironmentSelection(['execution_driver' => $selection['execution_driver'], 'environment_selection' => $selection]);
-    echo json_encode(['ok' => true, 'driver' => $selection['execution_driver']]);
-} catch (Throwable $e) { echo json_encode(['ok' => false, 'error' => $e->getMessage()]); }
+const {selectEnvironment,validateEnvironmentSelection}=require(process.argv[1]);
+const x=JSON.parse(require('node:fs').readFileSync(0,'utf8'));
+try {const selection=selectEnvironment(x.contexts,x.capabilities);validateEnvironmentSelection({execution_driver:selection.execution_driver,environment_selection:selection});console.log(require(require("node:path").resolve(require("node:path").dirname(process.argv[1]), "../../bork-review/scripts/support.js")).json_encode({ok:true,driver:selection.execution_driver}));}
+catch(error){console.log(require(require("node:path").resolve(require("node:path").dirname(process.argv[1]), "../../bork-review/scripts/support.js")).json_encode({ok:false,error:error.message}));}
+
 '''
         for herdr, tmux, screen in itertools.product((False, True), repeat=3):
             contexts = {name: {'active': active, 'pane_id': '0', 'socket': '123.fixture', 'shell_pid': 123}
@@ -81,7 +79,7 @@ try {
             selected = 'herdr' if herdr else 'tmux' if tmux else 'screen' if screen else 'native'
             for supported in (True, False):
                 payload = {'contexts': contexts, 'capabilities': {selected: {'supported': supported, 'evidence': 'fixture'}}}
-                output = subprocess.check_output(['php', '-r', runner, str(SCRIPTS / 'environment.php')],
+                output = subprocess.check_output([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), '-e', runner, str(SCRIPTS / 'environment.js')],
                                                  input=json.dumps(payload), text=True, env=self.env)
                 result = json.loads(output)
                 self.assertEqual(result['ok'], supported, result)
@@ -102,7 +100,7 @@ try {
         self.assertTrue(result['ok'], result)
         env = {**self.env, 'CODEX_THREAD_ID': 'fixture'}
         for _ in range(100):
-            output = subprocess.run(['php', str(SCRIPTS / 'environment.php')], env=env, cwd=self.root,
+            output = subprocess.run([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), str(SCRIPTS / 'environment.js')], env=env, cwd=self.root,
                                     input=json.dumps({'expected_environment': 'screen', 'capabilities': {
                                         'screen': {'supported': True, 'evidence': 'fixture'}}}),
                                     text=True, capture_output=True, timeout=10)
@@ -114,7 +112,7 @@ try {
         context = data['result']['contexts']['screen']
         self.assertEqual(context['socket_dir'], str(self.sockets))
         self.assertIn('frontend', context)
-        command = subprocess.run(['php', str(SCRIPTS / 'environment.php'), 'screen', '-Q', 'number'],
+        command = subprocess.run([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), str(SCRIPTS / 'environment.js'), 'screen', '-Q', 'number'],
                                  cwd=self.root, env=env, capture_output=True, text=True, timeout=10)
         self.assertEqual(command.returncode, 0, command.stdout)
         self.assertTrue(command.stdout.startswith('0 ('), command.stdout)
@@ -153,7 +151,7 @@ try {
 
     def test_interrupt_publishes_nonzero_exit(self):
         """Deliver terminal Ctrl-C and retain the interrupted job's exit evidence."""
-        result, record = self.launch('echo "ready\\n"; sleep(30);')
+        result, record = self.launch('console.log("ready"); setTimeout(()=>{},30000);')
         self.assertTrue(result['ok'], result)
         time.sleep(.15)
         self.assertTrue(self.invoke('interrupt', self.identity)['ok'])
@@ -165,9 +163,10 @@ try {
         input_path = self.root / 'capacity.json'
         input_path.write_text(json.dumps({'expected_environment': 'screen', 'capabilities': {
             'screen': {'supported': True, 'evidence': 'fixture capacity'}}}))
-        code = ('$p = proc_open(' + json.dumps(['php', str(SCRIPTS / 'environment.php'), str(input_path)])
-                + ', [0 => ["pipe", "r"], 1 => ["file", ' + json.dumps(str(output)) + ', "w"], 2 => STDERR], $pipes); '
-                + 'fclose($pipes[0]); proc_close($p); sleep(10);')
+        code = ('const fs=require("node:fs");const fd=fs.openSync(' + json.dumps(str(output))
+                + ',"w"); require("node:child_process").spawnSync(' + json.dumps(shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'))
+                + ',' + json.dumps([str(SCRIPTS / 'environment.js'), str(input_path)])
+                + ',{stdio:["ignore",fd,"inherit"]});fs.closeSync(fd);setTimeout(()=>{},10000);')
         result, _ = self.launch(code)
         self.assertTrue(result['ok'], result)
         for _ in range(100):
@@ -178,7 +177,7 @@ try {
         self.assertTrue(membership['ok'], membership)
         self.assertEqual(membership['result']['execution_driver'], 'screen')
         env = {**self.env, 'STY': self.identity['session'], 'WINDOW': '0'}
-        copied = subprocess.run(['php', str(SCRIPTS / 'environment.php'), str(input_path)],
+        copied = subprocess.run([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), str(SCRIPTS / 'environment.js'), str(input_path)],
                                 env=env, capture_output=True, text=True, timeout=10)
         self.assertEqual(copied.returncode, 1)
         self.assertIn('another process', json.loads(copied.stdout)['error'])

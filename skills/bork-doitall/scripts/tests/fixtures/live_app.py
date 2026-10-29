@@ -1,6 +1,8 @@
 """Opt-in isolated installed-host acceptance fixture retaining review evidence."""
 from pathlib import Path
 SCRIPTS = Path(__file__).resolve().parents[2]
+import os
+import shutil
 import os, subprocess, tempfile, json, time, signal
 root = tempfile.mkdtemp(prefix='bork-app-probe-', dir='/tmp')
 private_session = 'bork-app-probe-' + str(os.getpid())
@@ -92,7 +94,7 @@ try:
             data.update(extra or {})
             ip = root + '/input.json'
             open(ip, 'w').write(json.dumps(data))
-            r = command(['php', str(SCRIPTS / 'layout.php'), action, ip], False)
+            r = command([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), str(SCRIPTS / 'layout.js'), action, ip], False)
             print('ACTION', concurrency, action, r.returncode, r.stdout, flush=True) if r.returncode else print('ACTION', concurrency, action, 'PASS', flush=True)
             if success:
                 assert r.returncode == 0, r.stdout
@@ -109,14 +111,14 @@ try:
         layout('release', {'placement': 'review:1', 'task_id': 'fixture', 'result_path': resultfile, 'results_verified': True, 'descendants_stopped': True, 'worker_stopped': True})
         if concurrency == 1:
             job = root + '/worker-job.json'
-            open(job, 'w').write(json.dumps({'argv': ['/usr/bin/php', '-r', 'echo "visible worker\\n"; sleep(30);'], 'exit_record': root + '/worker-exit.json'}))
+            open(job, 'w').write(json.dumps({'argv': [shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), '-e', 'console.log("visible worker"); setTimeout(()=>{},30000);'], 'exit_record': root + '/worker-exit.json'}))
             launch = {'record': root + '/hc-worker.json', 'job': job, 'cwd': root, 'name': 'fixture-worker', 'role': 'master', 'slot': 1, 'run_id': 'adapter1', 'task_id': 'master-live', 'target_id': 'i10', 'session': private_session, 'layout_record': request['record']}
 
             def lifecycle(action, data):
                 """Exercise the actual hc lifecycle helper on its owned worker."""
                 ip = root + '/hc-input.json'
                 open(ip, 'w').write(json.dumps(data))
-                r = command(['php', str(SCRIPTS / 'hc.php'), action, ip], False)
+                r = command([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), str(SCRIPTS / 'hc.js'), action, ip], False)
                 print('HC', action, r.returncode, r.stdout if r.returncode else 'PASS', flush=True)
                 assert r.returncode == 0, r.stdout
                 return json.loads(r.stdout)['result']

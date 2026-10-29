@@ -1,32 +1,26 @@
 """Exercise hc discovery and durable lifecycle contracts without a shared core."""
 
+import os
+import shutil
 import json
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
-HELPER = Path(__file__).resolve().parents[1] / 'environment.php'
-PHP = r'''
-require $argv[1];
-$x = json_decode(stream_get_contents(STDIN), true);
-$run = static function ($args) use ($x) {
-    $key = implode(' ', $args);
-    if (!isset($x['commands'][$key])) { throw new RuntimeException('Unexpected command: ' . $key); }
-    return $x['commands'][$key];
-};
+HELPER = Path(__file__).resolve().parents[1] / 'environment.js'
+JS = r'''
+const {detectEnvironment,selectEnvironment,validateEnvironmentSelection}=require(process.argv[1]);
+const {hcAction}=require(require('node:path').join(require('node:path').dirname(process.argv[1]),'hc.js'));
+const x=JSON.parse(require('node:fs').readFileSync(0,'utf8'));
+const run=args=>{const key=args.join(' ');if(!(key in x.commands))throw new Error('Unexpected command: '+key);return x.commands[key];};
 try {
-    if ($x['mode'] === 'detect') {
-        $contexts = detectEnvironment(static fn ($k) => $x['env'][$k] ?? false, $run,
-            static fn ($pid) => in_array($pid, $x['ancestors'], true), $x['expected'] ?? null);
-        $selection = selectEnvironment($contexts, $x['capabilities']);
-        validateEnvironmentSelection(['execution_driver' => $selection['execution_driver'], 'environment_selection' => $selection]);
-        $result = $selection;
-    } else {
-        $result = hcAction($x['action'], $x['input'], $run);
-    }
-    echo json_encode(['ok' => true, 'result' => $result]);
-} catch (Throwable $e) { echo json_encode(['ok' => false, 'error' => $e->getMessage()]); }
+ let result;
+ if(x.mode==='detect') {const contexts=detectEnvironment(k=>x.env[k]??false,run,pid=>x.ancestors.includes(pid),x.expected??null);result=selectEnvironment(contexts,x.capabilities);validateEnvironmentSelection({execution_driver:result.execution_driver,environment_selection:result});}
+ else result=hcAction(x.action,x.input,run);
+ console.log(require(require("node:path").resolve(require("node:path").dirname(process.argv[1]), "../../bork-review/scripts/support.js")).json_encode({ok:true,result}));
+} catch(error){console.log(require(require("node:path").resolve(require("node:path").dirname(process.argv[1]), "../../bork-review/scripts/support.js")).json_encode({ok:false,error:error.message}));}
+
 '''
 
 
@@ -53,8 +47,8 @@ class HcTests(unittest.TestCase):
                       'name': 'bork-test', 'role': 'review', 'run_id': 'run-1', 'task_id': 'task-1'}
 
     def call(self, **data):
-        """Run production PHP functions and expose failures as structured evidence."""
-        result = subprocess.run(['php', '-r', PHP, str(HELPER)],
+        """Run production JavaScript functions and expose failures as structured evidence."""
+        result = subprocess.run([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), '-e', JS, str(HELPER)],
                                 input=json.dumps({'commands': self.commands, **data}), text=True,
                                 capture_output=True, check=True, timeout=10)
         return json.loads(result.stdout)

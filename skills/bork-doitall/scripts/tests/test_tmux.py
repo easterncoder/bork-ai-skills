@@ -1,5 +1,6 @@
 """Isolated scheduler and real tmux tests; never run an AI CLI or contact GitHub."""
 
+import os
 import json
 import shutil
 import subprocess
@@ -8,7 +9,7 @@ import time
 import unittest
 from pathlib import Path
 
-HELPER = Path(__file__).resolve().parents[1] / 'tmux.php'
+HELPER = Path(__file__).resolve().parents[1] / 'tmux.js'
 
 
 class DoitallTests(unittest.TestCase):
@@ -31,7 +32,7 @@ class DoitallTests(unittest.TestCase):
         self.counter += 1
         source = self.root / f'input-{self.counter}.json'
         source.write_text(json.dumps(data))
-        result = subprocess.run(['php', str(HELPER), action, str(source)], capture_output=True, text=True, timeout=15)
+        result = subprocess.run([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), str(HELPER), action, str(source)], capture_output=True, text=True, timeout=15)
         output = json.loads(result.stdout)
         self.assertEqual(result.returncode, 0 if output['ok'] else 1, result.stderr)
         return output
@@ -119,11 +120,11 @@ class DoitallTests(unittest.TestCase):
         self.assertEqual(result['result']['waiting'], ['3', '4', '5', '6'])
 
     def launch(self, role='master', session='doitall-fixture', socket_path=None):
-        """Launch a harmless PHP process in place of a master AI."""
+        """Launch a harmless Node.js process in place of a master AI."""
         suffix = str(self.counter + 1)
         record = self.root / f'exit-{suffix}.json'
         job = self.root / f'job-{suffix}.json'
-        job.write_text(json.dumps({'argv': [shutil.which('php'), '-r', 'echo "visible fixture\\n";'], 'exit_record': str(record)}))
+        job.write_text(json.dumps({'argv': [shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), '-e', 'console.log("visible fixture");'], 'exit_record': str(record)}))
         data = {'role': role, 'cwd': str(self.root), 'job': str(job), 'socket': self.socket}
         if socket_path is not None:
             del data['socket']

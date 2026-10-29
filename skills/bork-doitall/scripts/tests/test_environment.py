@@ -11,25 +11,20 @@ import time
 import unittest
 from pathlib import Path
 
-HELPER = Path(__file__).resolve().parents[1] / 'environment.php'
+HELPER = Path(__file__).resolve().parents[1] / 'environment.js'
 CAPACITY = {name: {'supported': True, 'evidence': 'Fixture host capacity verified'}
             for name in ('native', 'tmux', 'herdr')}
 RUNNER = r'''
-require $argv[1];
-$x = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+const {detectEnvironment, selectEnvironment} = require(process.argv[1]);
+const x = JSON.parse(require('node:fs').readFileSync(0, 'utf8'));
 try {
-    $env = static fn ($key) => $x['env'][$key] ?? false;
-    $run = static function ($args) use ($x) {
-        $key = implode(' ', $args);
-        if (!isset($x['commands'][$key])) { throw new RuntimeException('Unexpected discovery: ' . $key); }
-        return $x['commands'][$key];
-    };
-    $ancestor = static fn ($pid) => in_array($pid, $x['ancestors'] ?? [], true);
-    $contexts = detectEnvironment($env, $run, $ancestor, $x['expected_environment'] ?? null);
-    echo json_encode(['ok' => true, 'result' => selectEnvironment($contexts, $x['capabilities'])]);
-} catch (Throwable $error) {
-    echo json_encode(['ok' => false, 'error' => $error->getMessage()]);
-}
+ const env = key => x.env[key] ?? false;
+ const run = args => {const key=args.join(' '); if (!(key in x.commands)) throw new Error('Unexpected discovery: '+key); return x.commands[key];};
+ const ancestor = pid => (x.ancestors ?? []).includes(pid);
+ const contexts=detectEnvironment(env,run,ancestor,x.expected_environment ?? null);
+ console.log(require(require("node:path").resolve(require("node:path").dirname(process.argv[1]), "../../bork-review/scripts/support.js")).json_encode({ok:true,result:selectEnvironment(contexts,x.capabilities)}));
+} catch(error) {console.log(require(require("node:path").resolve(require("node:path").dirname(process.argv[1]), "../../bork-review/scripts/support.js")).json_encode({ok:false,error:error.message}));}
+
 '''
 
 
@@ -49,8 +44,8 @@ class EnvironmentTests(unittest.TestCase):
         return data
 
     def call(self, data):
-        """Evaluate PHP functions directly without allowing a fixture CLI override."""
-        result = subprocess.run(['php', '-r', RUNNER, str(HELPER)], input=json.dumps(data), text=True,
+        """Evaluate JavaScript functions directly without allowing a fixture CLI override."""
+        result = subprocess.run([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), '-e', RUNNER, str(HELPER)], input=json.dumps(data), text=True,
                                 capture_output=True, check=True, timeout=10)
         return json.loads(result.stdout)
 
@@ -113,7 +108,7 @@ class EnvironmentTests(unittest.TestCase):
         env = {key: value for key, value in os.environ.items()
                if not key.startswith('HERDR_') and key not in ('TMUX', 'TMUX_PANE')}
         with tempfile.TemporaryDirectory(prefix='no-codex-frontend-') as directory:
-            result = subprocess.run(['php', str(HELPER)],
+            result = subprocess.run([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), str(HELPER)],
                                     input=json.dumps({'expected_environment': 'herdr', 'capabilities': CAPACITY}),
                                     cwd=directory, env=env, text=True, capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 1)
@@ -123,12 +118,10 @@ class EnvironmentTests(unittest.TestCase):
     def test_frontend_recovery_uses_unique_same_user_cwd_and_identity(self):
         """Recover only caller variables and reject competing or mismatched frontends."""
         runner = r'''
-require $argv[1];
-try {
-    echo json_encode(['ok' => true, 'frontend' => recoverTerminalFrontend($argv[2], $argv[3], (int) $argv[4], $argv[5])]);
-} catch (Throwable $error) {
-    echo json_encode(['ok' => false, 'error' => $error->getMessage()]);
-}
+const {recoverTerminalFrontend}=require(require('node:path').join(require('node:path').dirname(process.argv[1]),'terminal-context.js'));
+try {console.log(require(require("node:path").resolve(require("node:path").dirname(process.argv[1]), "../../bork-review/scripts/support.js")).json_encode({ok:true,frontend:recoverTerminalFrontend(process.argv[2],process.argv[3],Number(process.argv[4]),process.argv[5])}));}
+catch(error){console.log(require(require("node:path").resolve(require("node:path").dirname(process.argv[1]), "../../bork-review/scripts/support.js")).json_encode({ok:false,error:error.message}));}
+
 '''
         with tempfile.TemporaryDirectory(prefix='frontend-proc-') as directory:
             root = Path(directory)
@@ -150,7 +143,7 @@ try {
 
             def recover(owner=os.getuid(), working_directory=cwd, expected='herdr'):
                 """Call production recovery against an isolated process inventory."""
-                result = subprocess.run(['php', '-r', runner, str(HELPER), str(root),
+                result = subprocess.run([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), '-e', runner, str(HELPER), str(root),
                                          str(working_directory), str(owner), expected], capture_output=True, text=True, check=True)
                 return json.loads(result.stdout)
 
@@ -182,11 +175,12 @@ try {
     def test_recovered_frontend_must_descend_from_the_pane_shell(self):
         """Detached backend ancestry is replaced only by the identified caller PID."""
         runner = r'''
-require $argv[1];
-$run = static fn ($args) => "900 100\n100 50\n50 1\n1 0";
-echo json_encode([environmentAncestor(50, $run, 900), environmentAncestor(70, $run, 900)]);
+const {environmentAncestor}=require(process.argv[1]);
+const run=()=>"900 100\n100 50\n50 1\n1 0";
+console.log(require(require("node:path").resolve(require("node:path").dirname(process.argv[1]), "../../bork-review/scripts/support.js")).json_encode([environmentAncestor(50,run,900),environmentAncestor(70,run,900)]));
+
 '''
-        result = subprocess.run(['php', '-r', runner, str(HELPER)], capture_output=True, text=True, check=True)
+        result = subprocess.run([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), '-e', runner, str(HELPER)], capture_output=True, text=True, check=True)
         self.assertEqual(json.loads(result.stdout), [True, False])
 
     def test_moved_herdr_caller_resolves_live_identity(self):
@@ -240,7 +234,7 @@ echo json_encode([environmentAncestor(50, $run, 900), environmentAncestor(70, $r
                     if Path(f'/proc/{pane_pid}/exe').resolve() == frontend:
                         break
                     time.sleep(.02)
-                result = subprocess.run(['php', str(HELPER)], input=json.dumps({'capabilities': CAPACITY}),
+                result = subprocess.run([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), str(HELPER)], input=json.dumps({'capabilities': CAPACITY}),
                                         env=env, cwd=directory, text=True, capture_output=True, timeout=10)
                 data = json.loads(result.stdout)
                 self.assertTrue(data['ok'], data)
@@ -248,7 +242,7 @@ echo json_encode([environmentAncestor(50, $run, 900), environmentAncestor(70, $r
                 context = data['result']['contexts']['tmux']
                 self.assertEqual(context['socket'], socket)
                 self.assertEqual(context['frontend']['pid'], int(pane_pid))
-                output = subprocess.run(['php', str(HELPER), 'tmux', 'display-message', '-p', '#{socket_path}'],
+                output = subprocess.run([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), str(HELPER), 'tmux', 'display-message', '-p', '#{socket_path}'],
                                         cwd=directory, env=env, text=True, capture_output=True, timeout=10)
                 self.assertEqual(output.returncode, 0, output.stdout)
                 self.assertEqual(output.stdout.strip(), socket)
@@ -264,7 +258,7 @@ echo json_encode([environmentAncestor(50, $run, 900), environmentAncestor(70, $r
             output = root / 'output.json'
             inputs = root / 'capacity.json'
             inputs.write_text(json.dumps({'capabilities': CAPACITY}))
-            command = shlex.join(['php', str(HELPER), str(inputs)]) + ' > ' + shlex.quote(str(output)) + '; sleep 3'
+            command = shlex.join([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), str(HELPER), str(inputs)]) + ' > ' + shlex.quote(str(output)) + '; sleep 3'
             base_env = {key: value for key, value in os.environ.items() if not key.startswith('HERDR_') and key not in ('TMUX', 'TMUX_PANE')}
             try:
                 subprocess.run(['tmux', '-S', socket, 'new-session', '-d', '-s', 'probe', command], env=base_env, check=True, capture_output=True)
@@ -277,7 +271,7 @@ echo json_encode([environmentAncestor(50, $run, 900), environmentAncestor(70, $r
                 self.assertEqual(result['result']['execution_driver'], 'tmux')
                 context = result['result']['contexts']['tmux']
                 stale_env = {**base_env, 'TMUX': socket + ',' + subprocess.check_output(['tmux', '-S', socket, 'display-message', '-p', '#{pid}'], text=True).strip() + ',0', 'TMUX_PANE': context['pane_id']}
-                stale = subprocess.run(['php', str(HELPER), str(inputs)], env=stale_env, text=True, capture_output=True)
+                stale = subprocess.run([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), str(HELPER), str(inputs)], env=stale_env, text=True, capture_output=True)
                 self.assertEqual(stale.returncode, 1)
                 self.assertIn('another process', json.loads(stale.stdout)['error'])
             finally:

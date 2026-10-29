@@ -1,6 +1,8 @@
 """Opt-in isolated installed-host acceptance fixture retaining review evidence."""
 from pathlib import Path
 SCRIPTS = Path(__file__).resolve().parents[2]
+import os
+import shutil
 import threading, select
 import os, pty, fcntl, termios, struct, subprocess, tempfile, time, re, json
 report_path = str(Path(tempfile.mkdtemp(prefix='bork-screen-adapter-')) / 'result.json')
@@ -86,7 +88,7 @@ for concurrency in [1, 2, 3]:
             data.update(extra or {})
             ip = root + '/input.json'
             open(ip, 'w').write(json.dumps(data))
-            p = subprocess.run(['php', str(SCRIPTS / 'layout.php'), action, ip], env=env, text=True, capture_output=True, timeout=180)
+            p = subprocess.run([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), str(SCRIPTS / 'layout.js'), action, ip], env=env, text=True, capture_output=True, timeout=180)
             print('ACTION', concurrency, action, p.returncode, p.stdout if p.returncode else 'PASS', flush=True)
             assert p.returncode == 0, p.stdout + p.stderr
             return json.loads(p.stdout)['result']
@@ -103,11 +105,11 @@ for concurrency in [1, 2, 3]:
         if concurrency == 1:
             job = root + '/job.json'
             exitfile = root + '/exit.json'
-            open(job, 'w').write(json.dumps({'argv': ['/usr/bin/php', '-r', 'echo "owned screen worker\\n";'], 'exit_record': exitfile}))
+            open(job, 'w').write(json.dumps({'argv': [shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), '-e', 'console.log("owned screen worker");'], 'exit_record': exitfile}))
             launch = dict(request, role='master', slot=1, task_id='master-launch', target_id='i10', job=job, layout_record=request['record'])
             lp = root + '/launch.json'
             open(lp, 'w').write(json.dumps(launch))
-            launched = subprocess.run(['php', str(SCRIPTS / 'screen.php'), 'launch', lp], env=env, text=True, capture_output=True, timeout=30)
+            launched = subprocess.run([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), str(SCRIPTS / 'screen.js'), 'launch', lp], env=env, text=True, capture_output=True, timeout=30)
             assert launched.returncode == 0, launched.stdout + launched.stderr
             assert json.loads(launched.stdout)['result']['pane'] == result['resources']['master:1']['id']
             for _ in range(100):
@@ -121,7 +123,7 @@ for concurrency in [1, 2, 3]:
         ctx = json.load(open(request['record']))['context']
         check = root + '/check.json'
         open(check, 'w').write(json.dumps(ctx))
-        v = subprocess.run(['php', '-r', 'require $argv[1]; echo borkLayoutScreen(json_decode(file_get_contents($argv[2]),true),["-X","layout","number"]);', str(SCRIPTS / 'layout.php'), check], env=env, text=True, capture_output=True, timeout=15)
+        v = subprocess.run([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), '-e', 'const a=require(require("node:path").join(require("node:path").dirname(process.argv[1]),"layout-adapters/screen.js"));process.stdout.write(a.borkLayoutScreen(JSON.parse(require("node:fs").readFileSync(process.argv[2],"utf8")),["-X","layout","number"]));', str(SCRIPTS / 'layout.js'), check], env=env, text=True, capture_output=True, timeout=15)
         assert v.returncode == 0 and v.stdout == layout_before, (layout_before, v.stdout, v.stderr)
         reports.append({'concurrency': concurrency, 'status': 'PASS', 'root': root})
     finally:
