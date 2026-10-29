@@ -84,6 +84,41 @@ class BatchTests(unittest.TestCase):
         return self.call('phase-adopt', target_id='12', phase=phase, agent_stopped=True,
                          descendants_stopped=True, remote={'pr_url': PR, 'head': head})
 
+    def test_environment_selection_persistence_and_resume(self):
+        """Retain the approved driver across a changed coordinator environment."""
+        plan = self.approved_plan()
+        plan['execution_driver'] = 'herdr'
+        plan['environment_selection'] = {
+            'version': 1, 'execution_driver': 'herdr',
+            'contexts': {'herdr': {'active': True, 'pane_id': 'w1:p1', 'socket': '/tmp/herdr', 'shell_pid': 123}, 'tmux': {'active': False}},
+            'capability': {'supported': True, 'evidence': 'Verified terminal and native child capacity'},
+        }
+        self.assertTrue(self.call('init', plan=plan)['ok'])
+        self.assertTrue(self.call('reserve')['ok'])
+        self.assertEqual(json.loads(self.plan.read_text())['environment_selection'], plan['environment_selection'])
+        self.assertTrue(self.call('inspect', target_id='12')['ok'])
+        self.assertEqual(json.loads(self.plan.read_text())['execution_driver'], 'herdr')
+
+    def test_environment_selection_mismatch_is_rejected(self):
+        """Refuse a driver inconsistent with its approved membership evidence."""
+        plan = self.approved_plan()
+        plan['execution_driver'] = 'tmux'
+        plan['environment_selection'] = {
+            'version': 1, 'execution_driver': 'native',
+            'contexts': {'herdr': {'active': False}, 'tmux': {'active': False}},
+            'capability': {'supported': True, 'evidence': 'native capacity'},
+        }
+        self.assertFalse(self.call('init', plan=plan)['ok'])
+        self.assertFalse(self.plan.exists())
+
+    def test_legacy_driver_is_not_reselected(self):
+        """An older approved native plan needs no new environment evidence."""
+        plan = self.approved_plan()
+        plan['execution_driver'] = 'native'
+        self.assertTrue(self.call('init', plan=plan)['ok'])
+        self.assertTrue(self.call('reserve')['ok'])
+        self.assertEqual(json.loads(self.plan.read_text())['execution_driver'], 'native')
+
     def test_go_gate_and_atomic_reservation(self):
         """Reject an unapproved plan and stale concurrent queue changes."""
         plan = self.approved_plan()
