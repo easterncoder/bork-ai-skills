@@ -5,7 +5,7 @@ declare(strict_types=1);
 /** Limit recovered process data to the terminal drivers' documented caller identity. */
 function terminalContextKeys(): array
 {
-    return ['HERDR_ENV', 'HERDR_PANE_ID', 'HERDR_TAB_ID', 'HERDR_WORKSPACE_ID', 'HERDR_SOCKET_PATH', 'TMUX', 'TMUX_PANE', 'STY', 'WINDOW', 'SCREENDIR'];
+    return ['HC_TERMINAL_ID', 'HC_SESSION', 'HERDR_ENV', 'HERDR_PANE_ID', 'HERDR_TAB_ID', 'HERDR_WORKSPACE_ID', 'HERDR_SOCKET_PATH', 'TMUX', 'TMUX_PANE', 'STY', 'WINDOW', 'SCREENDIR'];
 }
 
 /** Read one same-user interactive Codex frontend without retaining other variables. */
@@ -58,7 +58,7 @@ function recoverTerminalFrontend(string $root, string $cwd, int $owner, ?string 
         return null;
     }
     $environment = $candidates[0]['environment'] ?? [];
-    $reported = $expected === null ? $environment !== [] : ($expected === 'herdr' ? ($environment['HERDR_ENV'] ?? null) === '1' : !empty($environment[$expected === 'screen' ? 'STY' : 'TMUX']));
+    $reported = $expected === null ? $environment !== [] : ($expected === 'herdr' ? ($environment['HERDR_ENV'] ?? null) === '1' : !empty($environment[match ($expected) { 'hc' => 'HC_TERMINAL_ID', 'screen' => 'STY', default => 'TMUX' }]));
     if (count($candidates) !== 1 || !$reported) {
         throw new RuntimeException('Cannot uniquely resolve the reported ' . ($expected ?? 'terminal') . ' caller: expected one same-user Codex frontend in this working directory with terminal context. Retry outside the sandbox or run Codex with --no-daemon in the invoking pane.');
     }
@@ -70,8 +70,8 @@ function environmentRuntime(?string $expected): array
 {
     $run = 'environmentCommand';
     $runtime = ['env' => 'getenv', 'run' => $run, 'ancestor' => static fn (int $pid) => environmentAncestor($pid, $run), 'frontend' => null];
-    $signals = array_filter(array_map('getenv', array_diff(terminalContextKeys(), ['SCREENDIR'])), static fn ($value) => $value !== false && $value !== '');
-    if (!in_array($expected, [null, 'herdr', 'tmux', 'screen'], true) || $signals !== []
+    $signals = array_filter(array_map('getenv', array_diff(terminalContextKeys(), ['SCREENDIR', 'HC_SESSION'])), static fn ($value) => $value !== false && $value !== '');
+    if (!in_array($expected, [null, 'hc', 'herdr', 'tmux', 'screen'], true) || $signals !== []
         || ($expected === null && !getenv('CODEX_THREAD_ID'))) {
         return $runtime;
     }
