@@ -179,6 +179,30 @@ try {
             self.assertEqual(recovered['frontend']['environment'], tmux_context)
             self.assertFalse(recover()['ok'])
 
+    def test_shared_backend_ancestry_is_not_caller_membership(self):
+        """Recognize a visible shared backend even when it inherited terminal variables."""
+        runner = r'''
+require $argv[1];
+echo json_encode(terminalSharedBackend($argv[2], 101));
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / 'codex'
+            executable.touch()
+            for pid, parent, args in ((101, 100, ['php']), (100, 1, ['codex', 'app-server'])):
+                process = root / str(pid)
+                process.mkdir()
+                (process / 'exe').symlink_to(executable if pid == 100 else Path('/usr/bin/php'))
+                (process / 'cmdline').write_bytes(b'\0'.join(arg.encode() for arg in args))
+                (process / 'stat').write_text(f'{pid} (worker) S {parent} ' + ' '.join(['0'] * 20))
+            result = subprocess.run(['php', '-r', runner, str(HELPER), str(root)],
+                                    capture_output=True, text=True, check=True)
+            self.assertTrue(json.loads(result.stdout))
+            (root / '100/cmdline').write_bytes(b'codex\0--no-daemon\0exec\0task')
+            result = subprocess.run(['php', '-r', runner, str(HELPER), str(root)],
+                                    capture_output=True, text=True, check=True)
+            self.assertFalse(json.loads(result.stdout))
+
     def test_recovered_frontend_must_descend_from_the_pane_shell(self):
         """Detached backend ancestry is replaced only by the identified caller PID."""
         runner = r'''
@@ -241,7 +265,7 @@ echo json_encode([environmentAncestor(50, $run, 900), environmentAncestor(70, $r
                         break
                     time.sleep(.02)
                 result = subprocess.run(['php', str(HELPER)], input=json.dumps({'capabilities': CAPACITY}),
-                                        env=env, cwd=directory, text=True, capture_output=True, timeout=10)
+                                        env={**env, 'TMUX': str(root / 'stale') + ',999999,0', 'TMUX_PANE': '%999'}, cwd=directory, text=True, capture_output=True, timeout=10)
                 data = json.loads(result.stdout)
                 self.assertTrue(data['ok'], data)
                 self.assertEqual(data['result']['execution_driver'], 'tmux')
