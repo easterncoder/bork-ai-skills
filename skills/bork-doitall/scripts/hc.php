@@ -112,7 +112,7 @@ function hcLayoutShow(array $record, bool $show = true): void
         return;
     }
     borkLayoutAction('bind', ['record' => $record['layout_record'], 'placement' => $record['role'] . ':' . $record['slot'],
-        'task_id' => $record['task_id'], 'terminal_id' => $record['terminal_id'], 'created_ms' => $record['created_ms'], 'show' => $show]);
+        'task_id' => $record['task_id'], 'run_id' => $record['run_id'], 'terminal_id' => $record['terminal_id'], 'created_ms' => $record['created_ms'], 'show' => $show]);
 }
 
 /** Launch interactive roles and retain uncertain operations for explicit reconciliation. */
@@ -154,8 +154,11 @@ function hcAction(string $action, array $input, callable $run): array
         }
         hcRecord($path, $record);
         /* The CLI task is in argv at launch, never sent to a booting agent. */
-        $reply = hcReply(array_merge(['run', '--json', '--bg', '--name', $input['name'], '--cwd', $input['cwd'],
-            '--label', 'bork-run=' . $record['run_id']], $argv), $run);
+        $labels = ['--label', 'bork-run=' . $record['run_id']];
+        if (isset($record['layout_record'])) {
+            array_push($labels, '--label', 'bork-task=' . $record['task_id']);
+        }
+        $reply = hcReply(array_merge(['run', '--json', '--bg', '--name', $input['name'], '--cwd', $input['cwd']], $labels, $argv), $run);
         $record['terminal_id'] = $reply['address'] ?? null;
         $record['launch_reply'] = $reply;
         $record['state'] = ($reply['first_message']['sent'] ?? false) ? 'awaiting_result' : 'delivery_requires_reconciliation';

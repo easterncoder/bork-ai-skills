@@ -150,6 +150,73 @@ class LayoutTests(unittest.TestCase):
         self.assertFalse(self.invoke('create', data)['ok'])
 
     @unittest.skipUnless(shutil.which('tmux'), 'tmux unavailable')
+    def test_release_accepts_good_role_results_and_rejects_pending(self):
+        """Real goodcode result statuses release both roles only after shutdown."""
+        data, _, _ = self.create()
+        result_path = self.root / 'role-result.json'
+        for role in ('review', 'fix'):
+            task = role + '-1'
+            claim = {'record': data['record'], 'role': role, 'slot': 1, 'target_id': 'i1', 'task_id': task}
+            self.assertTrue(self.invoke('claim', claim)['ok'])
+            release = {'record': data['record'], 'placement': role + ':1', 'task_id': task,
+                       'result_path': str(result_path), 'results_verified': True,
+                       'worker_stopped': True, 'descendants_stopped': True}
+            for status in ('pending', '', 'coding'):
+                result_path.write_text(json.dumps({'role': role, 'task_id': task, 'status': status}))
+                self.assertFalse(self.invoke('release', release)['ok'])
+            result_path.write_text(json.dumps({'role': role, 'task_id': task, 'status': 'good'}))
+            self.assertFalse(self.invoke('release', {**release, 'worker_stopped': False})['ok'])
+            self.assertTrue(self.invoke('release', release)['ok'])
+
+    def test_app_binding_uses_claimed_child_identity(self):
+        """Bind the child run and task while rejecting unrelated terminal identities."""
+        hc = self.root / 'hc'
+        app = self.root / 'herdr-app'
+        terminal_path = self.root / 'terminal.json'
+        doc = {'value': {'spaces': [{'id': 's1', 'tabs': [{'id': 'tab1', 'root': {
+            'type': 'row', 'id': 'root', 'children': [
+                {'type': 'block', 'id': 'coord', 'content': {'terminal': 't1'}},
+                {'type': 'block', 'id': 'review', 'content': {'terminal': 't2'}}]}}]}]}, 'version': 1}
+        hc.write_text('#!/usr/bin/env python3\nimport sys,json\nr=json.loads(sys.stdin.readline())\n'
+                      + f'doc={doc!r}\n'
+                      + f'terminal=json.load(open({str(terminal_path)!r}))\n'
+                      + 'v={"server.status":{"core":{"id":"core1"}},"doc.get":doc,"terminal.get":terminal}[r["method"]]\n'
+                      + 'print(json.dumps({"result":v}))\n')
+        app.write_text('#!/usr/bin/env python3\nimport json\nprint(json.dumps({"space":"s1","tab":"tab1","focused_pane":"coord","overlays":[],"errors":[]}))\n')
+        hc.chmod(0o700)
+        app.chmod(0o700)
+        terminal = {'address': 'child-terminal', 'cols': 50, 'rows': 40, 'created_ms': 42,
+                    'labels': {'bork-run': 'child', 'bork-task': 'review-1'}}
+        record = {'driver': 'hc', 'state': 'ready', 'run_id': 'batch', 'coordinator': 'coord',
+                  'context': {'core_id': 'core1', 'root_area': {'x': 0, 'y': 0, 'width': 101, 'height': 40}},
+                  'original': {'focus': 'coord', 'panes': {'coord': {'window': 'tab1', 'x': 0, 'y': 0, 'width': 50, 'height': 40}}},
+                  'plan': {'slots': {'coordinator': {'x': 0, 'y': 0, 'width': 50, 'height': 40},
+                                     'review:1': {'x': 51, 'y': 0, 'width': 50, 'height': 40}}},
+                  'resources': {'coordinator': {'id': 'coord'}, 'review:1': {'id': 'review', 'state': 'claimed',
+                                'run_id': 'child', 'task_id': 'review-1'}}}
+        path = self.root / 'app-layout.json'
+        path.write_text(json.dumps(record))
+        request = {'record': str(path), 'placement': 'review:1', 'task_id': 'review-1', 'run_id': 'child',
+                   'terminal_id': 'child-terminal', 'created_ms': 42}
+        env = {**os.environ, 'PATH': str(self.root) + os.pathsep + os.environ['PATH']}
+        def bind(data, identity):
+            """Call the production binding with a controlled core response."""
+            terminal_path.write_text(json.dumps(identity))
+            self.index += 1
+            request_path = self.root / f'bind-{self.index}.json'
+            request_path.write_text(json.dumps(data))
+            proc = subprocess.run(['php', str(HELPER), 'bind', str(request_path)], env=env,
+                                  capture_output=True, text=True, timeout=15)
+            return json.loads(proc.stdout)
+        for change in ({'address': 'other'}, {'created_ms': 43},
+                       {'labels': {'bork-run': 'other', 'bork-task': 'review-1'}},
+                       {'labels': {'bork-run': 'child', 'bork-task': 'other'}}):
+            self.assertFalse(bind(request, {**terminal, **change})['ok'])
+        self.assertFalse(bind({**request, 'run_id': 'other'}, terminal)['ok'])
+        self.assertFalse(bind({**request, 'task_id': 'other'}, terminal)['ok'])
+        self.assertTrue(bind(request, terminal)['ok'])
+
+    @unittest.skipUnless(shutil.which('tmux'), 'tmux unavailable')
     def test_resize_and_uncertain_split_block_claim(self):
         """Geometry drift and pending journal intents pause new worker assignment."""
         data, record, _ = self.create()

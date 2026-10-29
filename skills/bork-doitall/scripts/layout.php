@@ -243,6 +243,9 @@ function borkLayoutClaim(array $input, array $record): array
     }
     borkLayoutIdle($record, $key);
     $record['resources'][$key] += ['task_id' => field($input, 'task_id'), 'target_id' => field($input, 'target_id')];
+    if ($record['driver'] === 'hc') {
+        $record['resources'][$key]['run_id'] = field($input, 'run_id');
+    }
     $record['resources'][$key]['state'] = 'claimed';
     borkLayoutWrite(field($input, 'record'), $record);
     return $record['resources'][$key];
@@ -262,7 +265,7 @@ function borkLayoutRelease(array $input, array $record): array
     }
     $resultPath = field($input, 'result_path');
     $result = readInput($resultPath);
-    if (!in_array($result['status'] ?? null, ['complete', 'blocked'], true)) {
+    if (!in_array($result['status'] ?? null, ['complete', 'good', 'blocked'], true)) {
         throw new RuntimeException('Release requires a durable terminal role result.');
     }
     $record['history'][] = ['placement' => $key, 'resource' => $resource, 'result_path' => $resultPath];

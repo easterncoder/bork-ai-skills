@@ -260,8 +260,11 @@ function borkLayoutAppBind(array $input, array $record): array
     $args = ['pane' => $resource['id']];
     if (($input['show'] ?? true) === true) {
         $terminal = borkLayoutAppRpc($record['context'], 'terminal.get', ['terminal' => field($input, 'terminal_id')]);
-        if (($terminal['created_ms'] ?? null) !== ($input['created_ms'] ?? null)
-            || ($terminal['labels']['bork-run'] ?? null) !== $record['run_id']) {
+        if (!is_int($input['created_ms'] ?? null) || ($terminal['created_ms'] ?? null) !== $input['created_ms']
+            || ($terminal['address'] ?? null) !== $input['terminal_id']
+            || ($resource['run_id'] ?? null) !== field($input, 'run_id')
+            || ($terminal['labels']['bork-run'] ?? null) !== $resource['run_id']
+            || ($terminal['labels']['bork-task'] ?? null) !== $resource['task_id']) {
             throw new RuntimeException('Visible App terminal ownership changed.');
         }
         $args['terminal'] = $input['terminal_id'];
