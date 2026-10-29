@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 
 
-HELPER = Path(__file__).resolve().parents[1] / 'tmux.php'
+HELPER = Path(__file__).resolve().parents[1] / 'tmux.js'
 
 
 class TerminalRunnerTests(unittest.TestCase):
@@ -22,7 +22,7 @@ class TerminalRunnerTests(unittest.TestCase):
             ('powershell', shutil.which('pwsh') or shutil.which('powershell'), ['-NoProfile', '-Command']),
             ('cmd', shutil.which('cmd.exe'), ['/d', '/s', '/c']),
         ]
-        php = shutil.which('php')
+        node = shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node')
         for shell, executable, flags in shells:
             if not executable:
                 continue
@@ -34,13 +34,13 @@ class TerminalRunnerTests(unittest.TestCase):
                 record = nested / 'exit.json'
                 job = nested / 'job.json'
                 job.write_text(json.dumps({
-                    'argv': [php, '-r', 'echo "runner output";'],
+                    'argv': [node, '-e', 'process.stdout.write("runner output");'],
                     'exit_record': str(record),
                 }))
                 launch = nested / 'launch.json'
                 launch.write_text(json.dumps({'shell': shell, 'cwd': str(root), 'job': str(job)}))
                 built = subprocess.run(
-                    [php, str(HELPER), 'command', str(launch)],
+                    [node, str(HELPER), 'command', str(launch)],
                     capture_output=True, text=True, timeout=10, check=True,
                 )
                 command = json.loads(built.stdout)['result']['command']
@@ -59,7 +59,7 @@ class TerminalRunnerTests(unittest.TestCase):
             source = Path(directory) / '%PATH%.json'
             source.write_text(json.dumps({'shell': 'cmd'}))
             result = subprocess.run(
-                [shutil.which('php'), str(HELPER), 'command', str(source)],
+                [shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), str(HELPER), 'command', str(source)],
                 capture_output=True, text=True, timeout=10,
             )
             self.assertEqual(result.returncode, 1)
@@ -85,7 +85,7 @@ class TerminalRunnerTests(unittest.TestCase):
                                                'exit_record': str(record)}))
                     launch = root / f'launch-{index}.json'
                     launch.write_text(json.dumps({'cwd': directory, 'job': str(job)}))
-                    result = subprocess.run(['php', str(HELPER), 'run', str(launch)],
+                    result = subprocess.run([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), str(HELPER), 'run', str(launch)],
                                             capture_output=True, text=True, timeout=10)
                     if args in rejected:
                         self.assertEqual(result.returncode, 1, result.stdout)
@@ -94,7 +94,7 @@ class TerminalRunnerTests(unittest.TestCase):
                         self.assertFalse(record.exists())
                         launch.write_text(json.dumps({'cwd': directory, 'job': str(job),
                                                       'shell': 'posix', 'layout_record': str(root / 'absent-layout.json')}))
-                        rejected_launch = subprocess.run(['php', str(HELPER.with_name('herdr.php')),
+                        rejected_launch = subprocess.run([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), str(HELPER.with_name('herdr.js')),
                                                           'launch', str(launch)],
                                                          capture_output=True, text=True, timeout=10)
                         self.assertEqual(rejected_launch.returncode, 1)
@@ -107,21 +107,21 @@ class TerminalRunnerTests(unittest.TestCase):
 
     def test_runner_preserves_exit_and_output_without_tmux(self):
         """Successful and failed commands publish their actual exit code."""
-        php = shutil.which('php')
+        node = shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node')
         for code in (0, 7):
             with self.subTest(code=code), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 record = root / 'exit.json'
                 job = root / 'job.json'
                 job.write_text(json.dumps({
-                    'argv': [php, '-r', f'echo getcwd(); exit({code});'],
+                    'argv': [node, '-e', f'process.stdout.write(process.cwd()); process.exit({code});'],
                     'exit_record': str(record),
                 }))
                 launch = root / 'launch.json'
                 launch.write_text(json.dumps({'cwd': str(root), 'job': str(job), 'role': 'master'}))
                 env = dict(os.environ, PATH='')
                 result = subprocess.run(
-                    [php, str(HELPER), 'run', str(launch)],
+                    [node, str(HELPER), 'run', str(launch)],
                     capture_output=True, text=True, env=env, timeout=10,
                 )
                 self.assertEqual(result.returncode, code, result.stderr)
@@ -129,7 +129,7 @@ class TerminalRunnerTests(unittest.TestCase):
                 evidence = json.loads(record.read_text())
                 self.assertEqual(evidence['exit_code'], code)
                 retry = subprocess.run(
-                    [php, str(HELPER), 'run', str(launch)],
+                    [node, str(HELPER), 'run', str(launch)],
                     capture_output=True, text=True, env=env, timeout=10,
                 )
                 self.assertEqual(retry.returncode, 1)

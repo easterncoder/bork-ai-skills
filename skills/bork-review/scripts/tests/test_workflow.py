@@ -1,4 +1,4 @@
-"""Run isolated CLI behavior checks with Python 3, PHP and Git; no network access."""
+"""Run isolated CLI behavior checks with Python 3, Node.js and Git; no network access."""
 
 import json
 import os
@@ -8,7 +8,7 @@ import shutil
 import tempfile
 import unittest
 
-HELPER = Path(__file__).resolve().parents[1] / 'workflow.php'
+HELPER = Path(__file__).resolve().parents[1] / 'workflow.js'
 
 
 class WorkflowTests(unittest.TestCase):
@@ -41,7 +41,7 @@ class WorkflowTests(unittest.TestCase):
 
     def call(self, action, **fields):
         """Invoke the public JSON interface and verify its exit status contract."""
-        result = subprocess.run(['php', str(HELPER)], input=json.dumps(dict(action=action, **fields)), text=True, capture_output=True, env=self.env, timeout=10)
+        result = subprocess.run([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), str(HELPER)], input=json.dumps(dict(action=action, **fields)), text=True, capture_output=True, env=self.env, timeout=10)
         output = json.loads(result.stdout)
         self.assertEqual(result.returncode, 0 if output['ok'] else 1, result.stderr)
         return output
