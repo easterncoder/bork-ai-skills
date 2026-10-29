@@ -1,0 +1,4 @@
+interface:
+  display_name: "BORK Goodcode"
+  short_description: "Automated PR review, fix, and push loop"
+  default_prompt: "Use $bork-goodcode to review and fix the active PR until no new commits are needed."

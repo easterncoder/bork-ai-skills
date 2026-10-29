@@ -1,0 +1,4 @@
+interface:
+  display_name: "BORK Doitall"
+  short_description: "Run issue and PR workflows with coordinated agents"
+  default_prompt: "Use $bork-doitall to process these GitHub issues or PRs through the full review workflow."

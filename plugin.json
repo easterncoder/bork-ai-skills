@@ -1,0 +1,27 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "bork",
+  "version": "0.1.0",
+  "description": "Portable GitHub issue and pull request workflows with coordinated implementation, review, and fixes.",
+  "author": {
+    "name": "easterncoder",
+    "url": "https://github.com/easterncoder"
+  },
+  "repository": "https://github.com/easterncoder/bork-ai-skills",
+  "keywords": [
+    "github",
+    "skills",
+    "code-review",
+    "pull-requests"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "BORK",
+        "shortDescription": "GitHub issue and pull request workflows",
+        "developerName": "easterncoder",
+        "category": "Developer tools"
+      }
+    }
+  }
+}
