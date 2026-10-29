@@ -1,4 +1,4 @@
-# BORK AI Skills
+# BORK: Bork of Remarkable Knowledge
 
 A private collection of skills for GitHub issue and pull request workflows, available as standalone skill folders or as a plugin. Version 0.1.1.
 
