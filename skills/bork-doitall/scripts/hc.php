@@ -126,12 +126,9 @@ function hcAction(string $action, array $input, callable $run): array
         $job = readInput(field($input, 'job'));
         validateJob($job);
         $argv = $job['argv'];
-        $mode = providerCommandMode($argv);
+        $mode = validateProviderCommand($argv);
         if (!$mode['interactive']) {
             throw new RuntimeException('hc roles require an interactive provider command.');
-        }
-        if (in_array(strtolower(basename($argv[0])), ['codex', 'codex.exe'], true) && !$mode['no_daemon']) {
-            throw new RuntimeException('Codex requires --no-daemon.');
         }
         hcCapabilities($run);
         if (!in_array($input['role'] ?? '', ['master', 'review', 'fix'], true)
