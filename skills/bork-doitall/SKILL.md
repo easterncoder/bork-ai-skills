@@ -17,6 +17,9 @@ Only an explicit `go` response to the displayed execution plan authorizes creati
 
 ## Coordinator
 
+For new visible-layout batches, read [shared layout and acceptance status](references/layout.md). Preflight the existing coordinator area before the preview, include any blocked visual acceptance explicitly, and create the approved tree once after `go`. Pass the journal and stable concurrency slot to each master and goodcode owner. Keep previously approved runs on their recorded launch contract.
+
+
 Before normalizing targets or launching workers, read [extra instruction routing](references/instruction-routing.md). Preserve appended user instructions, resolve their target/role scope, and carry them through every relevant sibling-skill handoff, cycle and resume.
 
 1. Detect the invoking host and verify authentication, Git, PHP CLI 8+, and sibling skills. Select the execution driver under [agent execution](references/panes.md): use the shared environment helper to verify active membership, passing `expected_environment` when the user reports hc, Herdr, tmux or Screen, select hc over Herdr over tmux over Screen over native, then validate only the selected driver against the documented CLI, nesting and capacity requirements. Reconcile missing caller context across sandbox or detached-backend boundaries before declaring a reported terminal environment inactive. Resolve supported prompt/model/reasoning controls once. If membership is unverifiable or the selected driver cannot run the workflow, report the concrete blocker; never switch agents or use Fable as a fallback. Do not choose a host merely because its executable is installed.

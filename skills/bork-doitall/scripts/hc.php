@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/terminal.php';
 require_once __DIR__ . '/provider-command.php';
+require_once __DIR__ . '/layout-adapters/hc-app.php';
 
 /** Decode the documented direct hc JSON response, rejecting error envelopes. */
 function hcReply(array $args, callable $run): array
@@ -109,6 +110,10 @@ function hcAction(string $action, array $input, callable $run): array
 {
     $path = field($input, 'record');
     if ($action === 'launch') {
+        if (isset($input['layout_record'])) {
+            $capability = borkLayoutAppCapabilities();
+            throw new RuntimeException($capability['reason']);
+        }
         if (file_exists($path) || is_link($path)) {
             throw new RuntimeException('Launch record exists; reconcile instead of launching twice.');
         }

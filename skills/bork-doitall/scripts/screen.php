@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/terminal.php';
+require_once __DIR__ . '/layout.php';
 
 /** Preserve a verified custom socket directory across detached tool boundaries. */
 function screenExecute(array $data, array $args, array $codes = [0]): string
@@ -42,6 +43,10 @@ function screenSessions(array $data): string
 /** Launch one isolated role session with retained dead windows and shared runner evidence. */
 function launchScreen(array $data, string $path): array
 {
+    if (isset($data['layout_record'])) {
+        $capability = borkLayoutScreenCapabilities();
+        throw new RuntimeException($capability['reason']);
+    }
     $role = field($data, 'role');
     $name = field($data, 'session_name');
     $cwd = field($data, 'cwd');
