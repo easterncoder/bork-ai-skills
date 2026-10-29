@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/scheduler.php';
 require_once __DIR__ . '/terminal.php';
+require_once __DIR__ . '/layout.php';
 
 /** Call tmux on the selected socket, supporting isolated test servers. */
 function tmux(array $data, array $args): string
@@ -40,15 +41,30 @@ function launch(array $data, string $inputPath): array
     if (!preg_match('/^[a-zA-Z0-9_-]+$/', $name)) {
         throw new RuntimeException('Unsafe session name.');
     }
-    $pane = tmux($data, ['new-session', '-d', '-P', '-F', '#{pane_id}', '-s', $name, '-c', $cwd, $bootstrap]);
+    if (isset($data['layout_record'])) {
+        $layout = readInput(field($data, 'layout_record'));
+        if ($layout['driver'] !== 'tmux' || $layout['context'] !== array_intersect_key($data, array_flip(['socket', 'socket_path']))) {
+            throw new RuntimeException('Launch socket does not match its recorded layout.');
+        }
+        $placement = borkLayoutAction('claim', [
+            'record' => $data['layout_record'], 'role' => $role, 'slot' => $data['slot'] ?? null,
+            'target_id' => field($data, 'target_id'), 'task_id' => field($data, 'task_id'),
+        ]);
+        $pane = $placement['id'];
+    } else {
+        /* Retain standalone and already-approved legacy launch compatibility. */
+        $pane = tmux($data, ['new-session', '-d', '-P', '-F', '#{pane_id}', '-s', $name, '-c', $cwd, $bootstrap]);
+    }
     tmux($data, ['set-option', '-p', '-t', $pane, 'remain-on-exit', 'on']);
     tmux($data, ['set-option', '-p', '-t', $pane, '@bork-role', $role]);
     tmux($data, ['select-pane', '-t', $pane, '-T', 'bork-' . $role]);
-    tmux($data, ['set-option', '-w', '-t', $pane, 'pane-border-status', 'top']);
-    tmux($data, ['set-option', '-w', '-t', $pane, 'pane-border-format', '#{pane_title}']);
+    if (!isset($data['layout_record'])) {
+        tmux($data, ['set-option', '-w', '-t', $pane, 'pane-border-status', 'top']);
+        tmux($data, ['set-option', '-w', '-t', $pane, 'pane-border-format', '#{pane_title}']);
+    }
     $session = tmux($data, ['display-message', '-p', '-t', $pane, '#{session_name}']);
     tmux($data, ['respawn-pane', '-k', '-t', $pane, '-c', $cwd, $runner]);
-    return ['session' => $session, 'pane' => $pane, 'role' => $role];
+    return ['session' => $session, 'pane' => $pane, 'role' => $role, 'layout_record' => $data['layout_record'] ?? null, 'slot' => $data['slot'] ?? null];
 }
 
 try {

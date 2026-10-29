@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/terminal.php';
 require_once __DIR__ . '/provider-command.php';
+require_once __DIR__ . '/layout.php';
 
 /** Decode the documented direct hc JSON response, rejecting error envelopes. */
 function hcReply(array $args, callable $run): array
@@ -104,6 +105,16 @@ function hcObservation(array $terminal): string
     return 'requires_result_and_ack';
 }
 
+/** Bind or restore the stable visible slot while preserving the user's final focus. */
+function hcLayoutShow(array $record, bool $show = true): void
+{
+    if (!isset($record['layout_record'], $record['placement'])) {
+        return;
+    }
+    borkLayoutAction('bind', ['record' => $record['layout_record'], 'placement' => $record['role'] . ':' . $record['slot'],
+        'task_id' => $record['task_id'], 'run_id' => $record['run_id'], 'terminal_id' => $record['terminal_id'], 'created_ms' => $record['created_ms'], 'show' => $show]);
+}
+
 /** Launch interactive roles and retain uncertain operations for explicit reconciliation. */
 function hcAction(string $action, array $input, callable $run): array
 {
@@ -133,10 +144,21 @@ function hcAction(string $action, array $input, callable $run): array
         field($record, 'core_id');
         field($record, 'run_id');
         field($record, 'task_id');
+        if (isset($input['layout_record'])) {
+            $layout = readInput(field($input, 'layout_record'));
+            if ($layout['driver'] !== 'hc' || ($layout['context']['session'] ?? null) !== ($input['session'] ?? null)
+                || $layout['context']['core_id'] !== $record['core_id']) {
+                throw new RuntimeException('App layout and worker must use the same recorded core/session.');
+            }
+            $record['placement'] = borkLayoutAction('claim', array_replace($input, ['record' => $input['layout_record']]));
+        }
         hcRecord($path, $record);
         /* The CLI task is in argv at launch, never sent to a booting agent. */
-        $reply = hcReply(array_merge(['run', '--json', '--bg', '--name', $input['name'], '--cwd', $input['cwd'],
-            '--label', 'bork-run=' . $record['run_id']], $argv), $run);
+        $labels = ['--label', 'bork-run=' . $record['run_id']];
+        if (isset($record['layout_record'])) {
+            array_push($labels, '--label', 'bork-task=' . $record['task_id']);
+        }
+        $reply = hcReply(array_merge(['run', '--json', '--bg', '--name', $input['name'], '--cwd', $input['cwd']], $labels, $argv), $run);
         $record['terminal_id'] = $reply['address'] ?? null;
         $record['launch_reply'] = $reply;
         $record['state'] = ($reply['first_message']['sent'] ?? false) ? 'awaiting_result' : 'delivery_requires_reconciliation';
@@ -145,6 +167,7 @@ function hcAction(string $action, array $input, callable $run): array
         $record['created_ms'] = $terminal['created_ms'] ?? null;
         hcRecord($path, $record);
         hcOwned($record, $run);
+        hcLayoutShow($record);
         return $record;
     }
     $record = readInput($path);
@@ -170,6 +193,7 @@ function hcAction(string $action, array $input, callable $run): array
         $record['created_ms'] = $matches[0]['created_ms'];
         hcRecord($path, $record);
         hcOwned($record, $run);
+        hcLayoutShow($record);
         return $record;
     }
     $terminal = hcOwned($record, $run);
@@ -232,6 +256,7 @@ function hcAction(string $action, array $input, callable $run): array
             throw new RuntimeException('hc process has not stopped.');
         }
         $record['exit_terminal'] = $terminal;
+        hcLayoutShow($record, false);
         $record['remove_reply'] = hcReply(['rm', $record['terminal_id']], $run);
         if (($record['remove_reply']['removed'] ?? null) !== $record['terminal_id']) {
             throw new RuntimeException('hc removal response does not match the owned terminal.');
