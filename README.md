@@ -87,6 +87,8 @@ Use a host with terminal access, Git, authenticated GitHub CLI (`gh`), PHP 8+, a
 
 BORK defaults to the `generic` profile. Supply an absolute Markdown profile path with `PROFILE=/absolute/path/to/profile.md` for organization-specific rules. The package includes no organization profile or wrapper. Profile propagation and retained snapshots are documented in [the profile contract](skills/bork-doitall/references/profile.md).
 
+If you report running inside Herdr or tmux but the tool process lacks its context, discovery blocks instead of silently selecting another driver. Sandboxes, environment filters and detached tool backends can hide the invoking terminal. The shared helper accepts `expected_environment` to guard this case. On Linux it can recover Herdr or tmux context from a unique same-user Codex frontend in the current working directory, verify its live pane/socket and shell ancestry, and route later terminal commands through that context. Multiple matching frontends remain blocked; discovery must run outside a sandbox that hides host processes.
+
 Each skill retains its own authorization boundaries. Doitall displays a plan and requires a separate `go`, defaults to `REVIEWER=NONE`, and merges only with approved `DOMERGE`. Prify and goodcode have their documented publication behavior. Ghreview asks before posting its completed review. Review and fix use their coordination contract.
 
 ## Repository layout
