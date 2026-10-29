@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/terminal-context.php';
+require_once __DIR__ . '/screen-context.php';
 
 /** Run a local command with a bounded observation period and explicit environment. */
 function environmentCommand(array $args, ?array $environment = null): string
@@ -76,10 +77,10 @@ function environmentHerdr(array $args, callable $run): array
 /** Detect membership independently of workflow capacity or installed executables. */
 function detectEnvironment(callable $env, callable $run, callable $ancestor, ?string $expectedEnvironment = null): array
 {
-    if ($expectedEnvironment !== null && !in_array($expectedEnvironment, ['herdr', 'tmux'], true)) {
+    if ($expectedEnvironment !== null && !in_array($expectedEnvironment, ['herdr', 'tmux', 'screen'], true)) {
         throw new RuntimeException('Unknown expected terminal environment.');
     }
-    $contexts = ['herdr' => ['active' => false], 'tmux' => ['active' => false]];
+    $contexts = ['herdr' => ['active' => false], 'tmux' => ['active' => false], 'screen' => ['active' => false]];
     $herdrKeys = ['HERDR_ENV', 'HERDR_PANE_ID', 'HERDR_TAB_ID', 'HERDR_WORKSPACE_ID', 'HERDR_SOCKET_PATH'];
     $herdr = array_combine($herdrKeys, array_map($env, $herdrKeys));
     if (count(array_filter($herdr, static fn ($value) => $value !== false && $value !== '')) > 0) {
@@ -114,6 +115,7 @@ function detectEnvironment(callable $env, callable $run, callable $ancestor, ?st
         }
         $contexts['tmux'] = ['active' => true, 'pane_id' => $pane, 'socket' => $socket, 'shell_pid' => (int) $reply[1], 'session_id' => $reply[4]];
     }
+    $contexts['screen'] = detectScreenContext($env, $run, $ancestor);
     if ($expectedEnvironment !== null && !$contexts[$expectedEnvironment]['active']) {
         throw new RuntimeException('Reported ' . $expectedEnvironment . ' membership is not visible to this tool process; verify discovery in the invoking terminal. A sandbox, environment filter or detached tool backend may hide caller context. Do not select another driver or copy context from an unrelated process.');
     }
@@ -123,12 +125,19 @@ function detectEnvironment(callable $env, callable $run, callable $ancestor, ?st
 /** Choose by verified membership, then require the selected driver's capacity. */
 function selectEnvironment(array $contexts, array $capabilities): array
 {
-    foreach (['herdr', 'tmux'] as $driver) {
+    $contexts['screen'] ??= ['active' => false];
+    foreach (['herdr', 'tmux', 'screen'] as $driver) {
         if (!is_bool($contexts[$driver]['active'] ?? null)) {
             throw new RuntimeException('Missing verified membership: ' . $driver);
         }
     }
-    $selected = $contexts['herdr']['active'] ? 'herdr' : ($contexts['tmux']['active'] ? 'tmux' : 'native');
+    $selected = 'native';
+    foreach (['herdr', 'tmux', 'screen'] as $driver) {
+        if ($contexts[$driver]['active']) {
+            $selected = $driver;
+            break;
+        }
+    }
     $capability = $capabilities[$selected] ?? null;
     if (!is_array($capability) || ($capability['supported'] ?? null) !== true || !is_string($capability['evidence'] ?? null)
         || trim($capability['evidence']) === '') {
@@ -141,7 +150,7 @@ function selectEnvironment(array $contexts, array $capabilities): array
 /** Validate additive selection evidence without reinterpreting legacy approvals. */
 function validateEnvironmentSelection(array $plan): void
 {
-    if (isset($plan['execution_driver']) && !in_array($plan['execution_driver'], ['native', 'tmux', 'herdr'], true)) {
+    if (isset($plan['execution_driver']) && !in_array($plan['execution_driver'], ['native', 'tmux', 'screen', 'herdr'], true)) {
         throw new RuntimeException('Unknown recorded execution driver.');
     }
     if (!array_key_exists('environment_selection', $plan)) {
@@ -151,7 +160,7 @@ function validateEnvironmentSelection(array $plan): void
     if (!is_array($selection) || ($selection['version'] ?? null) !== 1) {
         throw new RuntimeException('Unsupported environment selection evidence.');
     }
-    foreach (['herdr', 'tmux'] as $driver) {
+    foreach (['herdr', 'tmux', 'screen'] as $driver) {
         $context = $selection['contexts'][$driver] ?? [];
         if (($context['active'] ?? false) === true && (!is_string($context['pane_id'] ?? null) || $context['pane_id'] === ''
             || !is_string($context['socket'] ?? null) || $context['socket'] === '' || !is_int($context['shell_pid'] ?? null) || $context['shell_pid'] < 1)) {
@@ -167,12 +176,12 @@ function validateEnvironmentSelection(array $plan): void
 
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     try {
-        $terminalCommand = in_array($argv[1] ?? '', ['herdr', 'tmux'], true) ? $argv[1] : null;
+        $terminalCommand = in_array($argv[1] ?? '', ['herdr', 'tmux', 'screen'], true) ? $argv[1] : null;
         $input = $terminalCommand !== null ? ['expected_environment' => $terminalCommand] : json_decode(file_get_contents($argv[1] ?? 'php://stdin'), true, 512, JSON_THROW_ON_ERROR);
         $runtime = environmentRuntime($input['expected_environment'] ?? null);
         $contexts = detectEnvironment($runtime['env'], $runtime['run'], $runtime['ancestor'], $input['expected_environment'] ?? null);
         if ($runtime['frontend'] !== null) {
-            foreach (['herdr', 'tmux'] as $driver) {
+            foreach (['herdr', 'tmux', 'screen'] as $driver) {
                 if ($contexts[$driver]['active']) {
                     $contexts[$driver]['frontend'] = $runtime['frontend'];
                 }
@@ -180,10 +189,17 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
         }
         if ($terminalCommand !== null) {
             $args = array_slice($argv, 2);
-            if ($args === [] || str_starts_with($args[0], '-')) {
+            if ($args === [] || ($terminalCommand !== 'screen' && str_starts_with($args[0], '-'))) {
                 throw new RuntimeException('Supply a local terminal command group; socket, session and remote overrides are not supported.');
             }
-            $prefix = $terminalCommand === 'tmux' ? ['tmux', '-S', $contexts['tmux']['socket']] : ['herdr'];
+            $prefix = match ($terminalCommand) {
+                'tmux' => ['tmux', '-S', $contexts['tmux']['socket']],
+                'screen' => ['screen', '-S', $contexts['screen']['session_id'], '-p', $contexts['screen']['pane_id']],
+                default => ['herdr'],
+            };
+            if ($terminalCommand === 'screen' && !in_array($args[0], ['-Q', '-X'], true)) {
+                throw new RuntimeException('Screen wrapper requires -Q or -X.');
+            }
             echo ($runtime['run'])(array_merge($prefix, $args)) . "\n";
             exit(0);
         }
