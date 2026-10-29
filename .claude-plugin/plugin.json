@@ -1,0 +1,14 @@
+{
+  "name": "bork",
+  "version": "0.1.1",
+  "description": "Portable GitHub issue and pull request workflows with coordinated implementation, review, and fixes.",
+  "author": {
+    "name": "BORK contributors"
+  },
+  "keywords": [
+    "github",
+    "skills",
+    "code-review",
+    "pull-requests"
+  ]
+}
