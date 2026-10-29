@@ -1,6 +1,6 @@
 # BORK AI Skills
 
-A private, skills-only plugin for GitHub issue and pull request workflows. Version 0.1.1.
+A private collection of skills for GitHub issue and pull request workflows, available as standalone skill folders or as a plugin. Version 0.1.1.
 
 | Skill | Purpose |
 | --- | --- |
@@ -11,6 +11,40 @@ A private, skills-only plugin for GitHub issue and pull request workflows. Versi
 | `bork-review` | Review within the coordinated review/fix loop. |
 | `bork-fix` | Fix and validate the loop's blocking findings. |
 | `bork-ghreview` | Perform one PR review, with confirmation before posting. |
+
+## Install without the plugin
+
+The plugin is optional. You can install the skill folders directly in your agent's skills directory. Keep all seven BORK folders together because the workflows call each other and use relative sibling links.
+
+For a shared installation, authenticate GitHub access to this private repository, then clone it into a permanent location and link its skills into `~/.agents/skills`:
+
+```bash
+gh repo clone easterncoder/bork-ai-skills
+cd bork-ai-skills
+mkdir -p ~/.agents/skills
+ln -s "$PWD"/skills/bork-* ~/.agents/skills/
+```
+
+These commands do not overwrite existing entries. If BORK is already installed there, reuse that installation or deliberately replace its links. Keep the clone at the same path while using these symlinks. To update the linked skills, run `git pull --ff-only` in the clone.
+
+Codex and Grok Build discover `~/.agents/skills` directly. Other hosts can share the same files through symlinks from their own discovery directories:
+
+| Host | Global skills directory |
+| --- | --- |
+| Claude Code | `~/.claude/skills/` |
+| Antigravity App and standalone IDE | `~/.gemini/config/skills/` |
+| Antigravity CLI | `~/.gemini/antigravity-cli/skills/` |
+
+For example, if Claude Code does not already reach the shared skills through an existing symlink:
+
+```bash
+mkdir -p ~/.claude/skills
+ln -s ~/.agents/skills/bork-* ~/.claude/skills/
+```
+
+You can also copy all seven folders instead of linking them, but copied installations require separate updates. For a project-scoped installation, Codex and Antigravity support `<project>/.agents/skills/`; Claude Code uses `<project>/.claude/skills/`.
+
+Start a new conversation after installation. Invoke a standalone skill as `$bork-doitall 123` in Codex CLI or `/bork-doitall 123` in Claude Code. Standalone installation has the same [requirements and behavior](#requirements-and-behavior) as the plugin.
 
 ## Install with Codex
 
@@ -43,6 +77,8 @@ Restart Claude Code after installation. Invoke a bundled skill with its plugin n
 /bork:bork-goodcode 123
 ```
 
+Claude Code also accepts `/bork-doitall 123` or `/bork-goodcode 123` when no other command uses that name. The namespaced form explicitly selects the plugin's skill.
+
 Inside Claude Code, the equivalent install commands are `/plugin marketplace add easterncoder/bork-ai-skills` and `/plugin install bork@bork-ai-skills`.
 
 ## Requirements and behavior
@@ -63,7 +99,7 @@ plugin.json                         Portable Agent Plugins manifest
 skills/bork-*/                      Seven skills and bundled references/helpers/tests
 ```
 
-Keep the skills together: their relative sibling links resolve inside the installed plugin. Source files were imported from the installed BORK skills; edits in this repository do not automatically update those original copies.
+Keep the skills together: their relative sibling links resolve when installed as adjacent folders, including inside the plugin. Source files were imported from the installed BORK skills; edits in this repository do not automatically update those original copies.
 
 ## Validate locally
 
