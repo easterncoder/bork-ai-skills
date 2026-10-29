@@ -151,12 +151,9 @@ function hcAction(action, input, run) {
     job = c.clone(require("./terminal.js").readInput(require("./terminal.js").field(input, "job")));
     require("./terminal.js").validateJob(job);
     argv = c.clone(c.get(job, "argv"));
-    mode = c.clone(require("./provider-command.js").providerCommandMode(argv));
+    mode = c.clone(require("./provider-command.js").validateProviderCommand(argv));
     if (!c.truth(c.get(mode, "interactive"))) {
       throw new Error("hc roles require an interactive provider command.");
-    }
-    if (c.in_array(c.strtolower(c.basename(c.get(argv, 0))), ["codex", "codex.exe"], true) && !c.truth(c.get(mode, "no_daemon"))) {
-      throw new Error("Codex requires --no-daemon.");
     }
     hcCapabilities(run);
     if (!c.in_array(c.get(input, "role") ?? "", ["master", "review", "fix"], true) || !c.truth(c.preg_match("/^[a-z0-9_-]{1,32}$/D", require("./terminal.js").field(input, "name"))) || !c.is_dir(require("./terminal.js").field(input, "cwd"))) {

@@ -172,6 +172,75 @@ catch(error){console.log(require(require("node:path").resolve(require("node:path
             self.assertEqual(recovered['frontend']['environment'], tmux_context)
             self.assertFalse(recover()['ok'])
 
+    def test_shared_backend_ancestry_is_not_caller_membership(self):
+        """Recognize a visible shared backend even when it inherited terminal variables."""
+        runner = r'''
+const context = require(require('node:path').join(require('node:path').dirname(process.argv[1]), 'terminal-context.js'));
+console.log(JSON.stringify(context.terminalSharedBackend(process.argv[2], 101)));
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / 'codex'
+            executable.touch()
+            for pid, parent, args in ((101, 100, ['php']), (100, 1, ['codex', 'app-server'])):
+                process = root / str(pid)
+                process.mkdir()
+                (process / 'exe').symlink_to(executable if pid == 100 else Path('/usr/bin/php'))
+                (process / 'cmdline').write_bytes(b'\0'.join(arg.encode() for arg in args))
+                (process / 'stat').write_text(f'{pid} (worker) S {parent} ' + ' '.join(['0'] * 20))
+            result = subprocess.run([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), '-e', runner, str(HELPER), str(root)],
+                                    capture_output=True, text=True, check=True)
+            self.assertTrue(json.loads(result.stdout))
+            (root / '100/cmdline').write_bytes(b'codex\0--no-daemon\0exec\0task')
+            result = subprocess.run([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), '-e', runner, str(HELPER), str(root)],
+                                    capture_output=True, text=True, check=True)
+            self.assertFalse(json.loads(result.stdout))
+
+    @unittest.skipUnless(shutil.which('tmux') and shutil.which('cc') and Path('/proc/self').exists(),
+                         'local procfs, tmux and a C compiler required')
+    def test_shared_backend_without_frontend_blocks_public_discovery(self):
+        """A backend with live inherited membership cannot authorize its startup pane."""
+        with tempfile.TemporaryDirectory(prefix='backend-no-frontend-') as directory:
+            root = Path(directory)
+            socket = str(root / 'socket')
+            executable = root / 'codex'
+            source = root / 'backend.c'
+            output = root / 'output.json'
+            inputs = root / 'capacity.json'
+            inputs.write_text(json.dumps({'capabilities': CAPACITY}))
+            node = shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node')
+            source.write_text(
+                '#include <unistd.h>\n#include <sys/wait.h>\n'
+                '/* Keep the backend visible as the discovery process ancestor. */\n'
+                'int main(int argc, char **argv) {\n'
+                '    if (argc != 4) return 2;\n'
+                '    pid_t child = fork();\n'
+                '    if (child == 0) { execlp(' + json.dumps(node) + ', ' + json.dumps(node) + ', argv[2], argv[3], (char *)0); _exit(127); }\n'
+                '    int result;\n'
+                '    waitpid(child, &result, 0);\n'
+                '    return WIFEXITED(result) ? WEXITSTATUS(result) : 1;\n'
+                '}\n'
+            )
+            subprocess.run(['cc', str(source), '-o', str(executable)], check=True, capture_output=True)
+            env = {key: value for key, value in os.environ.items()
+                   if not key.startswith(('HC_', 'HERDR_'))
+                   and key not in ('TMUX', 'TMUX_PANE', 'STY', 'WINDOW', 'SCREENDIR')}
+            env['CODEX_THREAD_ID'] = 'fixture-shared-backend'
+            command = shlex.join([str(executable), 'app-server', str(HELPER), str(inputs)]) + ' > ' + shlex.quote(str(output))
+            try:
+                subprocess.run(['tmux', '-S', socket, 'new-session', '-d', '-s', 'fixture',
+                                '-c', directory, command], env=env, check=True, capture_output=True)
+                for _ in range(100):
+                    if output.exists() and output.stat().st_size:
+                        break
+                    time.sleep(.02)
+                result = json.loads(output.read_text())
+                self.assertFalse(result['ok'], result)
+                self.assertIn('shared backend', result['error'])
+                self.assertIn('--no-daemon', result['error'])
+            finally:
+                subprocess.run(['tmux', '-S', socket, 'kill-server'], capture_output=True)
+
     def test_recovered_frontend_must_descend_from_the_pane_shell(self):
         """Detached backend ancestry is replaced only by the identified caller PID."""
         runner = r'''
@@ -235,7 +304,7 @@ console.log(require(require("node:path").resolve(require("node:path").dirname(pr
                         break
                     time.sleep(.02)
                 result = subprocess.run([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), str(HELPER)], input=json.dumps({'capabilities': CAPACITY}),
-                                        env=env, cwd=directory, text=True, capture_output=True, timeout=10)
+                                        env={**env, 'TMUX': str(root / 'stale') + ',999999,0', 'TMUX_PANE': '%999'}, cwd=directory, text=True, capture_output=True, timeout=10)
                 data = json.loads(result.stdout)
                 self.assertTrue(data['ok'], data)
                 self.assertEqual(data['result']['execution_driver'], 'tmux')

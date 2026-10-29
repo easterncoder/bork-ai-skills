@@ -99,6 +99,7 @@ function validateJob(job) {
       }
     }
   }
+  require("./provider-command.js").validateProviderCommand(args);
   field(job, "exit_record");
 }
 /** Run the selected agent with the pane's actual terminal streams. */

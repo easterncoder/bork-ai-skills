@@ -25,7 +25,7 @@ function terminalFrontend(directory, cwd, owner) {
   command = c.clone(c.file_get_contents(c.string(directory) + c.string("/cmdline")));
   stat = c.clone(c.file_get_contents(c.string(directory) + c.string("/stat")));
   if (c.equal(command, false) || c.equal(stat, false)) {
-    return null;
+    throw new Error("Cannot read the matching Codex frontend identity; procfs access may be sandbox denied. Run Codex with --no-daemon in the invoking pane.");
   }
   args = c.clone(c.explode("\u0000", c.rtrim(command, "\u0000")));
   /* Daemons and noninteractive workers cannot identify an invoking terminal. */
@@ -83,14 +83,34 @@ function recoverTerminalFrontend(root, cwd, owner, expected) {
   environment = c.clone(c.get(candidates, 0, "environment") ?? []);
   reported = c.clone(c.equal(expected, null) ? !c.equal(environment, []) : c.equal(expected, "herdr") ? c.equal(c.get(environment, "HERDR_ENV") ?? null, "1") : !!c.truth(c.get(environment, (_match => c.equal(_match, "hc") ? "HC_TERMINAL_ID" : c.equal(_match, "screen") ? "STY" : "TMUX")(expected))));
   if (!c.equal(c.count(candidates), 1) || !c.truth(reported)) {
-    throw new Error(c.string(c.string("Cannot uniquely resolve the reported ") + c.string(expected ?? "terminal")) + c.string(" caller: expected one same-user Codex frontend in this working directory with terminal context. Retry outside the sandbox or run Codex with --no-daemon in the invoking pane."));
+    const reason = c.count(candidates) > 1 ? "ambiguous matching frontends" : c.count(candidates) === 0 ? "missing frontend in this working directory or inaccessible procfs" : "frontend lacks the reported terminal context";
+    throw new Error("Cannot uniquely resolve the reported " + (expected ?? "terminal") + " caller: " + reason + ". Retry outside the sandbox or run Codex with --no-daemon in the invoking pane.");
   }
   return c.get(candidates, 0);
+}
+/** Identify a shared Codex backend in the visible invoking process ancestry. */
+function terminalSharedBackend(root, pid) {
+  c.assertType(root, "string", "terminalSharedBackend.root");
+  c.assertType(pid, "int", "terminalSharedBackend.pid");
+  const seen = new Set();
+  while (pid > 0 && !seen.has(pid)) {
+    seen.add(pid);
+    const directory = root + "/" + pid;
+    const raw = c.file_get_contents(directory + "/cmdline");
+    const stat = c.file_get_contents(directory + "/stat");
+    if (raw === false || stat === false) return false;
+    const args = raw.replace(/\0+$/, "").split("\0");
+    const mode = args[0] ? require("./provider-command.js").providerCommandMode(args) : {interactive: false, no_daemon: false};
+    if (c.basename(String(c.realpath(directory + "/exe"))) === "codex" && !c.get(mode, "interactive") && !c.get(mode, "no_daemon")) return true;
+    const fields = stat.slice(stat.lastIndexOf(")") + 2).split(/\s+/);
+    pid = Number(fields[1]) || 0;
+  }
+  return false;
 }
 /** Bind discovery and later terminal commands to the same verified caller context. */
 function environmentRuntime(expected) {
   c.assertType(expected, "?string", "environmentRuntime.expected");
-  let cwd, environment, frontend, owner, run, runtime, signals;
+  let cwd, directError, environment, frontend, owner, run, runtime, sharedBackend, signals;
   expected = c.clone(expected);
   run = require("./environment.js").environmentCommand;
   runtime = c.clone(c.entriesArray([["env", c.getenv], ["run", run], ["ancestor", function (pid) {
@@ -101,22 +121,44 @@ function environmentRuntime(expected) {
     value = c.clone(value);
     return !c.equal(value, false) && !c.equal(value, "");
   }));
-  if (!c.in_array(expected, [null, "hc", "herdr", "tmux", "screen"], true) || !c.equal(signals, []) || c.equal(expected, null) && !c.truth(c.getenv("CODEX_THREAD_ID"))) {
+  if (!c.in_array(expected, [null, "hc", "herdr", "tmux", "screen"], true) || c.equal(signals, []) && c.equal(expected, null) && !c.truth(c.getenv("CODEX_THREAD_ID"))) {
     return runtime;
   }
+  directError = null;
+  sharedBackend = false;
+  if (!c.equal(signals, [])) {
+    try {
+      require("./environment.js").detectEnvironment(c.get(runtime, "env"), run, c.get(runtime, "ancestor"), expected);
+      sharedBackend = !!c.truth(c.getenv("CODEX_THREAD_ID")) && terminalSharedBackend("/proc", c.getmypid());
+      if (!sharedBackend) return runtime;
+    } catch (error) {
+      directError = error.message;
+      if (!c.truth(c.getenv("CODEX_THREAD_ID"))) {
+        throw new Error("Stale or inaccessible inherited caller context: " + directError + " Run discovery in the invoking pane, or restart Codex with --no-daemon; never copy unrelated pane variables.", {cause: error});
+      }
+    }
+  }
   if (!c.is_dir("/proc/self")) {
-    if (c.equal(expected, null)) {
+    if (c.equal(expected, null) && !sharedBackend) {
       return runtime;
     }
     throw new Error("Detached terminal caller recovery needs local procfs; run discovery in the invoking terminal.");
   }
   cwd = c.clone(c.realpath(c.getcwd()));
   owner = c.clone(c.fileowner("/proc/self"));
-  frontend = c.clone(recoverTerminalFrontend("/proc", cwd, owner, expected));
+  try {
+    frontend = c.clone(recoverTerminalFrontend("/proc", cwd, owner, expected));
+  } catch (error) {
+    throw new Error((directError === null ? "Missing or detached caller context. " : "Stale or inaccessible inherited caller context: " + directError + " ") + error.message, {cause: error});
+  }
   if (c.equal(frontend, null)) {
+    if (sharedBackend) {
+      throw new Error("Cannot verify the caller for a shared backend: no unique frontend with terminal context in this working directory. Run Codex with --no-daemon in the invoking pane.");
+    }
     return runtime;
   }
-  environment = c.clone(c.array_replace(c.getenv(), c.get(frontend, "environment")));
+  /* Discard stale membership for other drivers before restoring the caller. */
+  environment = c.clone(c.array_replace(Object.fromEntries(Object.entries(c.getenv()).filter(([key]) => !terminalContextKeys().includes(key))), c.get(frontend, "environment")));
   run = function (args) {
     let current;
     args = c.clone(args);
@@ -138,5 +180,6 @@ module.exports = {
   terminalContextKeys,
   terminalFrontend,
   recoverTerminalFrontend,
+  terminalSharedBackend,
   environmentRuntime
 };

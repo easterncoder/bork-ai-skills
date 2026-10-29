@@ -166,7 +166,7 @@ print('0 (coordinator)')
         source.write_text('#include <unistd.h>\n/* Retain a harmless interactive fixture. */\nint main(void) { sleep(30); return 0; }\n')
         subprocess.run(['cc', str(source), '-o', str(frontend)], check=True, capture_output=True)
         job = self.root / 'job.json'
-        job.write_text(json.dumps({'argv': [str(frontend)], 'exit_record': str(self.root / 'exit.json')}))
+        job.write_text(json.dumps({'argv': [str(frontend), '--no-daemon'], 'exit_record': str(self.root / 'exit.json')}))
         result = self.invoke('launch', {'role': 'master', 'cwd': str(self.root), 'job': str(job),
                                         'session_name': 'frontend', 'socket_dir': str(self.sockets)})
         self.assertTrue(result['ok'], result)

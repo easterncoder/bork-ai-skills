@@ -41,6 +41,17 @@ function providerCommandMode(argv) {
   }
   return c.entriesArray([["interactive", true], ["no_daemon", noDaemon]]);
 }
+
+/** Enforce embedded Codex execution across terminal launchers. */
+function validateProviderCommand(argv) {
+  c.assertType(argv, "array", "validateProviderCommand.argv");
+  const mode = providerCommandMode(argv);
+  if (c.in_array(c.strtolower(c.basename(c.get(argv, 0))), ["codex", "codex.exe"], true) && !c.get(mode, "no_daemon")) {
+    throw new Error("Codex requires --no-daemon as a launch option; verify support with codex --help.");
+  }
+  return mode;
+}
 module.exports = {
-  providerCommandMode
+  providerCommandMode,
+  validateProviderCommand
 };

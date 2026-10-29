@@ -65,6 +65,46 @@ class TerminalRunnerTests(unittest.TestCase):
             self.assertEqual(result.returncode, 1)
             self.assertFalse(json.loads(result.stdout)['ok'])
 
+    def test_codex_launch_requires_a_real_global_no_daemon_flag(self):
+        """Reject text and option operands before any provider can execute."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / 'codex'
+            executable.write_text('#!/bin/sh\ntouch "' + str(root / 'ran') + '"\n')
+            executable.chmod(0o700)
+            rejected = [[], ['task --no-daemon'], ['-m', '--no-daemon'],
+                        ['--config', '--no-daemon'], ['--', '--no-daemon'],
+                        ['exec', 'task --no-daemon'], ['--profile=--no-daemon']]
+            accepted = [['--no-daemon', 'task'], ['task', '--no-daemon'], ['--no-daemon', 'exec', 'task'],
+                        ['-m', 'gpt-6.1-sol', '--no-daemon', 'task']]
+            for index, args in enumerate(rejected + accepted):
+                with self.subTest(args=args):
+                    job = root / f'job-{index}.json'
+                    record = root / f'exit-{index}.json'
+                    job.write_text(json.dumps({'argv': [str(executable), *args],
+                                               'exit_record': str(record)}))
+                    launch = root / f'launch-{index}.json'
+                    launch.write_text(json.dumps({'cwd': directory, 'job': str(job)}))
+                    result = subprocess.run([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), str(HELPER), 'run', str(launch)],
+                                            capture_output=True, text=True, timeout=10)
+                    if args in rejected:
+                        self.assertEqual(result.returncode, 1, result.stdout)
+                        self.assertIn('--no-daemon', json.loads(result.stdout)['error'])
+                        self.assertFalse((root / 'ran').exists())
+                        self.assertFalse(record.exists())
+                        launch.write_text(json.dumps({'cwd': directory, 'job': str(job),
+                                                      'shell': 'posix', 'layout_record': str(root / 'absent-layout.json')}))
+                        rejected_launch = subprocess.run([shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node'), str(HELPER.with_name('herdr.js')),
+                                                          'launch', str(launch)],
+                                                         capture_output=True, text=True, timeout=10)
+                        self.assertEqual(rejected_launch.returncode, 1)
+                        self.assertIn('--no-daemon', json.loads(rejected_launch.stdout)['error'])
+                        self.assertFalse((root / 'absent-layout.json').exists())
+                    else:
+                        self.assertEqual(result.returncode, 0, result.stdout)
+                        self.assertTrue((root / 'ran').exists())
+                        (root / 'ran').unlink()
+
     def test_runner_preserves_exit_and_output_without_tmux(self):
         """Successful and failed commands publish their actual exit code."""
         node = shutil.which(os.environ.get('NODE_BINARY', 'node')) or os.environ.get('NODE_BINARY', 'node')
