@@ -118,15 +118,31 @@ class DoitallTests(unittest.TestCase):
         self.assertEqual(result['result']['launch'], ['0', '1', '2'])
         self.assertEqual(result['result']['waiting'], ['3', '4', '5', '6'])
 
-    def launch(self, role='master', session='doitall-fixture'):
+    def launch(self, role='master', session='doitall-fixture', socket_path=None):
         """Launch a harmless PHP process in place of a master AI."""
         suffix = str(self.counter + 1)
         record = self.root / f'exit-{suffix}.json'
         job = self.root / f'job-{suffix}.json'
         job.write_text(json.dumps({'argv': [shutil.which('php'), '-r', 'echo "visible fixture\\n";'], 'exit_record': str(record)}))
         data = {'role': role, 'cwd': str(self.root), 'job': str(job), 'socket': self.socket}
+        if socket_path is not None:
+            del data['socket']
+            data['socket_path'] = socket_path
         data['session_name'] = session
         return self.invoke('launch', data), record
+
+    @unittest.skipUnless(shutil.which('tmux'), 'tmux unavailable')
+    def test_absolute_socket_preserves_selected_server(self):
+        """Launch on the inherited absolute socket rather than a default server."""
+        socket = str(self.root / 'selected.sock')
+        try:
+            result, _ = self.launch(socket_path=socket)
+            self.assertTrue(result['ok'], result)
+            role = subprocess.check_output(['tmux', '-S', socket, 'display-message', '-p',
+                                            '-t', result['result']['pane'], '#{@bork-role}'], text=True).strip()
+            self.assertEqual(role, 'master')
+        finally:
+            subprocess.run(['tmux', '-S', socket, 'kill-server'], capture_output=True)
 
     def test_unmanaged_roles_rejected(self):
         """Only target masters and coordinated workers receive sessions."""

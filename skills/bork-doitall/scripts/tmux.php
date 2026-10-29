@@ -9,7 +9,12 @@ require_once __DIR__ . '/terminal.php';
 function tmux(array $data, array $args): string
 {
     $prefix = ['tmux'];
-    if (isset($data['socket'])) {
+    if (isset($data['socket_path'], $data['socket'])) {
+        throw new RuntimeException('Supply either socket_path or a named socket, not both.');
+    }
+    if (isset($data['socket_path'])) {
+        $prefix = array_merge($prefix, ['-S', field($data, 'socket_path')]);
+    } elseif (isset($data['socket'])) {
         $prefix = array_merge($prefix, ['-L', field($data, 'socket')]);
     }
     return execute(array_merge($prefix, $args));

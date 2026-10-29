@@ -2,10 +2,12 @@
 
 declare(strict_types=1);
 
-/** Run a read-only discovery command with a bounded observation period. */
-function environmentCommand(array $args): string
+require_once __DIR__ . '/terminal-context.php';
+
+/** Run a local command with a bounded observation period and explicit environment. */
+function environmentCommand(array $args, ?array $environment = null): string
 {
-    $process = proc_open($args, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, null, ['bypass_shell' => true]);
+    $process = proc_open($args, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $environment, ['bypass_shell' => true]);
     if (!is_resource($process)) {
         throw new RuntimeException('Session discovery command could not start: ' . $args[0]);
     }
@@ -41,7 +43,7 @@ function environmentCommand(array $args): string
 }
 
 /** Verify that a live pane shell is an ancestor of this invoking process. */
-function environmentAncestor(int $shell, callable $run): bool
+function environmentAncestor(int $shell, callable $run, ?int $caller = null): bool
 {
     $parents = [];
     foreach (explode("\n", $run(['ps', '-eo', 'pid=,ppid='])) as $line) {
@@ -49,7 +51,7 @@ function environmentAncestor(int $shell, callable $run): bool
             $parents[(int) $match[1]] = (int) $match[2];
         }
     }
-    $pid = getmypid();
+    $pid = $caller ?? getmypid();
     $seen = [];
     while ($pid > 0 && !isset($seen[$pid])) {
         if ($pid === $shell) {
@@ -72,8 +74,11 @@ function environmentHerdr(array $args, callable $run): array
 }
 
 /** Detect membership independently of workflow capacity or installed executables. */
-function detectEnvironment(callable $env, callable $run, callable $ancestor): array
+function detectEnvironment(callable $env, callable $run, callable $ancestor, ?string $expectedEnvironment = null): array
 {
+    if ($expectedEnvironment !== null && !in_array($expectedEnvironment, ['herdr', 'tmux'], true)) {
+        throw new RuntimeException('Unknown expected terminal environment.');
+    }
     $contexts = ['herdr' => ['active' => false], 'tmux' => ['active' => false]];
     $herdrKeys = ['HERDR_ENV', 'HERDR_PANE_ID', 'HERDR_TAB_ID', 'HERDR_WORKSPACE_ID', 'HERDR_SOCKET_PATH'];
     $herdr = array_combine($herdrKeys, array_map($env, $herdrKeys));
@@ -108,6 +113,9 @@ function detectEnvironment(callable $env, callable $run, callable $ancestor): ar
             throw new RuntimeException('Explicit tmux context is stale or belongs to another process; reconcile the live socket and pane.');
         }
         $contexts['tmux'] = ['active' => true, 'pane_id' => $pane, 'socket' => $socket, 'shell_pid' => (int) $reply[1], 'session_id' => $reply[4]];
+    }
+    if ($expectedEnvironment !== null && !$contexts[$expectedEnvironment]['active']) {
+        throw new RuntimeException('Reported ' . $expectedEnvironment . ' membership is not visible to this tool process; verify discovery in the invoking terminal. A sandbox, environment filter or detached tool backend may hide caller context. Do not select another driver or copy context from an unrelated process.');
     }
     return $contexts;
 }
@@ -159,9 +167,26 @@ function validateEnvironmentSelection(array $plan): void
 
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     try {
-        $input = json_decode(file_get_contents($argv[1] ?? 'php://stdin'), true, 512, JSON_THROW_ON_ERROR);
-        $run = 'environmentCommand';
-        $contexts = detectEnvironment('getenv', $run, static fn (int $pid) => environmentAncestor($pid, $run));
+        $terminalCommand = in_array($argv[1] ?? '', ['herdr', 'tmux'], true) ? $argv[1] : null;
+        $input = $terminalCommand !== null ? ['expected_environment' => $terminalCommand] : json_decode(file_get_contents($argv[1] ?? 'php://stdin'), true, 512, JSON_THROW_ON_ERROR);
+        $runtime = environmentRuntime($input['expected_environment'] ?? null);
+        $contexts = detectEnvironment($runtime['env'], $runtime['run'], $runtime['ancestor'], $input['expected_environment'] ?? null);
+        if ($runtime['frontend'] !== null) {
+            foreach (['herdr', 'tmux'] as $driver) {
+                if ($contexts[$driver]['active']) {
+                    $contexts[$driver]['frontend'] = $runtime['frontend'];
+                }
+            }
+        }
+        if ($terminalCommand !== null) {
+            $args = array_slice($argv, 2);
+            if ($args === [] || str_starts_with($args[0], '-')) {
+                throw new RuntimeException('Supply a local terminal command group; socket, session and remote overrides are not supported.');
+            }
+            $prefix = $terminalCommand === 'tmux' ? ['tmux', '-S', $contexts['tmux']['socket']] : ['herdr'];
+            echo ($runtime['run'])(array_merge($prefix, $args)) . "\n";
+            exit(0);
+        }
         $result = selectEnvironment($contexts, $input['capabilities'] ?? []);
         echo json_encode(['ok' => true, 'result' => $result], JSON_THROW_ON_ERROR) . "\n";
     } catch (Throwable $error) {
