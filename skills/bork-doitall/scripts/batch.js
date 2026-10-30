@@ -298,6 +298,22 @@ function changePlan(plan, input) {
   }
   if (c.equal(action, "reserve")) {
     selection = c.clone(require("./scheduler.js").schedule(plan));
+    if (plan.layout_record) {
+      const layout = require('./terminal.js').readInput(plan.layout_record);
+      if (layout.version === 2) {
+        const admitted = [];
+        selection.waiting_capacity = {};
+        for (const targetId of selection.launch) {
+          const target = plan.targets[targetId];
+          const capacity = require('./layout.js').borkLayoutAction('admit', {record: plan.layout_record, target_id: targetId, ...(target.slot ? {slot: target.slot} : {})});
+          target.capacity = capacity;
+          if (capacity.admitted) { target.slot = capacity.slot; admitted.push(targetId); }
+          else if (capacity.status === 'blocked') c.set(selection, ['blocked', targetId], '=', capacity.reason);
+          else selection.waiting_capacity[targetId] = capacity;
+        }
+        selection.launch = admitted;
+      }
+    }
     for (const [_key, _value] of c.entries(c.get(selection, "blocked"))) {
       id = _key;
       reason = c.clone(_value);
@@ -312,7 +328,7 @@ function changePlan(plan, input) {
         c.set(plan, ["targets", id, "status"], "=", "starting");
       }
     }
-    result = c.clone(c.entriesArray([["event", "reserved"], ["launch", c.get(selection, "launch")], ["blocked", c.get(selection, "blocked")]]));
+    result = c.clone(c.entriesArray([["event", "reserved"], ["launch", c.get(selection, "launch")], ["blocked", c.get(selection, "blocked")], ["waiting_capacity", selection.waiting_capacity ?? {}]]));
   } else if (c.equal(action, "started")) {
     id = c.clone(requiredText(input, "target_id"));
     targetAt(plan, id, ["starting"]);

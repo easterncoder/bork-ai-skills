@@ -24,6 +24,8 @@ Each suite below accepts the same individual command, substituting its name for 
 | bork-doitall | test_environment | 14 |
 | bork-doitall | test_hc | 10 |
 | bork-doitall | test_layout | 11 |
+| bork-doitall | test_layout_demand | 8 |
+| bork-doitall | test_layout_demand_hosts | 3 |
 | bork-doitall | test_layout_hosts | 2 |
 | bork-doitall | test_screen | 8 |
 | bork-doitall | test_terminal | 4 |
@@ -42,4 +44,12 @@ Two visual host cases skip by default. Opt in only on a host with GNU Screen, Li
 BORK_TEST_LIVE_HOSTS=1 node tests/run.js test_layout_hosts
 ```
 
-The visual fixtures allocate private sessions, displays and application state. They exercise concurrency 1/2/3, worker binding, restart reconciliation and cleanup with harmless Node/shell commands. Evidence paths print in their output and are intentionally retained for inspection. They do not use the user's terminal sessions. Missing optional prerequisites produce explicit skips. On a fully provisioned host the ordinary run contains 112 cases, with 110 passing and the two opt-in cases skipped.
+The visual fixtures allocate private sessions, displays and application state. They exercise concurrency 1/2/3, worker binding, restart reconciliation and cleanup with harmless Node/shell commands. Evidence paths print in their output and are intentionally retained for inspection. They do not use the user's terminal sessions. Missing optional prerequisites produce explicit skips. The ordinary run reports explicit skips for opt-in cases.
+
+Demand lifecycle acceptance uses private tmux automatically (`test_layout_demand`). It exercises both role orders, three simultaneous groups, arbitrary turnover, repeated passes, capacity admission/wake and interrupted known-ID reflow. Run the additional installed-host production cases with:
+
+```sh
+BORK_TEST_LIVE_HOSTS=1 node tests/run.js test_layout_demand_hosts
+```
+
+These cases require the corresponding host binaries, retain private evidence, and include three-group turnover. App additionally binds an actual harmless hc worker, restarts its frontend, reconciles the binding and removes the finished view. Screen's guarded display traversal can take several minutes. Legacy fixed-layout cases remain in `test_layout_hosts`.

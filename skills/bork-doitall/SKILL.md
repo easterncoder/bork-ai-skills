@@ -17,7 +17,7 @@ Only an explicit `go` response to the displayed execution plan authorizes creati
 
 ## Coordinator
 
-For new visible-layout batches, read [shared layout and acceptance status](references/layout.md). Preflight the existing coordinator area before the preview, include any blocked visual acceptance explicitly, and create the approved tree once after `go`. Pass the journal and stable concurrency slot to each master and goodcode owner. Keep previously approved runs on their recorded launch contract.
+For new visible-layout batches, read [shared layout and acceptance status](references/layout.md). Preflight the existing coordinator area before the preview, include any blocked visual acceptance explicitly, and create the approved empty versioned journal once after `go`, then admit targets against measured pair headroom before reservation. Pass the journal and admitted stable concurrency slot to each master and goodcode owner. Keep previously approved runs on their recorded launch contract.
 
 
 Before normalizing targets or launching workers, read [extra instruction routing](references/instruction-routing.md). Preserve appended user instructions, resolve their target/role scope, and carry them through every relevant sibling-skill handoff, cycle and resume.

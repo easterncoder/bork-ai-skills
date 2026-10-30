@@ -47,7 +47,7 @@ function main() {
         const original = rpc('terminal.get', {terminal: coordinator}); console.log('ORIGINAL_DIMENSIONS', original.cols, original.rows);
         const summary = [];
         for (const concurrency of [1, 2, 3]) {
-            const request = {driver: 'hc', visual_host: 'herdr-app', context: {session, app_home: env.HERDR_APP_HOME}, coordinator: pane, concurrency, run_id: 'adapter'+concurrency, cwd: String(root), record: String(root.join('layout-'+concurrency+'.json'))};
+            const request = {lifecycle: 'fixed', driver: 'hc', visual_host: 'herdr-app', context: {session, app_home: env.HERDR_APP_HOME}, coordinator: pane, concurrency, run_id: 'adapter'+concurrency, cwd: String(root), record: String(root.join('layout-'+concurrency+'.json'))};
             /* Exercise actual layout actions with independent immutable requests. */
             function layout(action, extra = {}, success = true) {
                 const input = root.join('input.json'); input.writeText(json({...request, ...extra}));

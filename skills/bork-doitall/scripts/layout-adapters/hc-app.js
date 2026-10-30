@@ -340,8 +340,10 @@ function borkLayoutAppBind(input, record) {
   }
   borkLayoutAppShow(record, args);
   c.set(record, ["resources", key, "visible_terminal"], "DELETE", null);
+  if (record.version === 2) delete record.resources[key].visible_created_ms;
   if (c.get(args, "terminal") != null) {
     c.set(record, ["resources", key, "visible_terminal"], "=", c.get(args, "terminal"));
+    if (record.version === 2) record.resources[key].visible_created_ms = input.created_ms;
   }
   /* Reapply only the idempotent view binding while App incorporates the new core terminal. */
   borkLayoutAppStable(record, true, function () {

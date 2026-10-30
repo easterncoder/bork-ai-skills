@@ -45,6 +45,7 @@ function borkLayoutVerify(record, geometry = true, rendered = true) {
   c.assertType(record, "array", "borkLayoutVerify.record");
   c.assertType(geometry, "bool", "borkLayoutVerify.geometry");
   c.assertType(rendered, "bool", "borkLayoutVerify.rendered");
+  if (record.version === 2) return require('./layout-demand.js').verify(record, rendered);
   let id, ids, pane, placement, resource, snapshot;
   record = c.clone(record);
   geometry = c.clone(geometry);
@@ -115,9 +116,9 @@ function borkLayoutPreflight(input) {
   }
   record = c.clone(c.entriesArray([["driver", driver], ["context", context], ["coordinator", require("./terminal.js").field(input, "coordinator")]]));
   snapshot = c.clone(borkLayoutSnapshot(record));
-  return c.entriesArray([["supported", true], ["visual", true], ["capability", capability], ["snapshot", snapshot], ["context", context], ["plan", require("./layout-plan.js").borkLayoutPlan(c.get(input, "concurrency") ?? 1, c.array_intersect_key(c.get(snapshot, "panes", c.get(record, "coordinator")), c.array_flip(["x", "y", "width", "height"])), c.equal(driver, "herdr") ? 0 : 1)]]);
+  return c.entriesArray([["supported", true], ["visual", true], ["capability", capability], ["snapshot", snapshot], ["context", context], ["plan", (input.lifecycle === "fixed" ? borkLayoutPlan : require("./layout-demand.js").demandPlan)(input.concurrency ?? 1, c.array_intersect_key(snapshot.panes[record.coordinator], c.array_flip(["x", "y", "width", "height"])), ...(input.lifecycle === "fixed" ? [driver === "herdr" ? 0 : 1] : [input.topology ?? {}, driver === "herdr" ? 0 : 1]))]]);
 }
-/** Provision placeholders once, journaling every split before mutation. */
+/** Create a versioned lifecycle journal, retaining explicit fixed-layout compatibility. */
 function borkLayoutCreate(input) {
   c.assertType(input, "array", "borkLayoutCreate.input");
   let created, id, index, operation, pane, path, preflight, record, resource, run, snapshot;
@@ -137,6 +138,7 @@ function borkLayoutCreate(input) {
   if (!c.truth(c.preg_match("/^[a-zA-Z0-9_-]+$/D", run)) || !c.is_dir(require("./terminal.js").field(input, "cwd"))) {
     throw new Error("Invalid run identity or working directory.");
   }
+  if (input.lifecycle !== "fixed") return require("./layout-demand.js").create(input, preflight);
   record = c.clone(c.array_merge(input, c.entriesArray([["version", 1], ["state", "creating"], ["context", c.get(preflight, "context")], ["plan", c.get(preflight, "plan")], ["capability", c.get(preflight, "capability")], ["original", c.get(preflight, "snapshot")], ["resources", c.entriesArray([["coordinator", c.entriesArray([["id", c.get(input, "coordinator")], ["state", "protected"]])]])], ["pending", null]])));
   if (c.equal(c.get(record, "driver"), "hc")) {
     c.set(record, ["context", "root_area"], "=", c.get(record, "original", "root_area"));
@@ -293,7 +295,8 @@ function borkLayoutRelease(input, record) {
 /** Move focus off a closing owned leaf while preserving unrelated user navigation. */
 function borkLayoutCleanupFocus(record, id) {
   const snapshot = borkLayoutSnapshot(record);
-  if (snapshot.focus !== id) return;
+  const focus = record.version === 2 && record.driver === 'herdr' ? require('./layout-adapters/herdr.js').borkLayoutHerdr(record.context, ['api', 'snapshot']).snapshot.focused_pane_id : snapshot.focus;
+  if (focus !== id) return;
   const context = record.context;
   if (record.driver === 'tmux') {
     require('./layout-adapters/tmux.js').borkLayoutTmux(context, ['select-pane', '-t', record.coordinator]);
@@ -379,7 +382,7 @@ function borkLayoutCleanup(input, record) {
 function borkLayoutAction(action, input) {
   c.assertType(action, "string", "borkLayoutAction.action");
   c.assertType(input, "array", "borkLayoutAction.input");
-  if (action === 'plan') return borkLayoutPlan(input.concurrency ?? 1, input.area ?? []);
+  if (action === 'plan') return input.lifecycle === 'fixed' ? borkLayoutPlan(input.concurrency ?? 1, input.area ?? []) : require('./layout-demand.js').demandPlan(input.concurrency ?? 1, input.area ?? {}, input.topology ?? {}, input.driver === 'herdr' ? 0 : 1, input.reserve_pair === true);
   if (action === 'preflight') return borkLayoutPreflight(input);
   return c.lockedCommand(field(input, 'record') + '.lock', __filename, ['--locked', action], input);
 }
@@ -388,7 +391,14 @@ function borkLayoutAction(action, input) {
 function layoutDispatch(action, input) {
   if (action === 'create') return borkLayoutCreate(input);
   const record = require('./terminal.js').readInput(field(input, 'record'));
+  if (record.version === 2) {
+    const demand = require('./layout-demand.js');
+    const actions = {claim: () => demand.claim(input, record), release: () => demand.release(input, record), admit: () => demand.admission(record, input), 'cancel-admission': () => demand.cancelAdmission(input, record), reconcile: () => demand.reconcile(input, record), cleanup: () => demand.cleanup(input, record)};
+    if (actions[action]) return actions[action]();
+  } else if (record.version !== 1) throw new Error('Unsupported layout journal version; preserve it for recovery.');
   switch (action) {
+    case 'verify':
+      return borkLayoutVerify(record);
     case 'inspect':
       return {
         record,
@@ -416,6 +426,7 @@ module.exports = {
   borkLayoutClaim,
   borkLayoutRelease,
   borkLayoutCleanup,
+  borkLayoutCleanupFocus,
   borkLayoutAction
 };
 if (require.main === module) {

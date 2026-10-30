@@ -55,6 +55,7 @@ function launch(data, inputPath) {
       throw new Error("Launch socket does not match its recorded layout.");
     }
     placement = c.clone(require("./layout.js").borkLayoutAction("claim", c.entriesArray([["record", c.get(data, "layout_record")], ["role", role], ["slot", c.get(data, "slot") ?? null], ["target_id", require("./terminal.js").field(data, "target_id")], ["task_id", require("./terminal.js").field(data, "task_id")]])));
+    if (!c.get(placement, "id")) throw new Error("Visual admission is waiting or blocked; retain capacity result before launching a worker.");
     pane = c.clone(c.get(placement, "id"));
   } else {
     /* Retain standalone and already-approved legacy launch compatibility. */

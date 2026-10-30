@@ -25,15 +25,22 @@ function borkHerdrLaunch(input, path) {
     throw new Error("Herdr launch requires a verified Herdr layout.");
   }
   require("./layout.js").borkLayoutVerify(layout);
+  /** Claim only after shell preflight for legacy fixed journals. */
+  function claimPlacement() {
+    placement = c.clone(require("./layout.js").borkLayoutAction("claim", c.entriesArray([["record", c.get(input, "layout_record")], ["role", require("./terminal.js").field(input, "role")], ["slot", c.get(input, "slot") ?? null], ["task_id", require("./terminal.js").field(input, "task_id")], ["target_id", require("./terminal.js").field(input, "target_id")]])));
+    if (!placement.id) throw new Error('Visual admission is waiting or blocked; no worker may launch.');
+  }
+  if (layout.version === 2) claimPlacement();
+
   key = c.clone(c.string(c.string(require("./terminal.js").field(input, "role")) + c.string(":")) + c.string(c.get(input, "slot") ?? ""));
-  pane = c.clone(c.get(layout, "resources", key, "id") ?? "");
+  pane = c.clone(layout.version === 2 ? placement.id : c.get(layout, "resources", key, "id"));
   process = c.clone(require("./layout-adapters/herdr.js").borkLayoutHerdr(c.get(layout, "context"), ["pane", "process-info", "--pane", pane]));
   process = c.clone(c.get(process, "process_info") ?? process);
   foreground = c.clone(c.get(process, "foreground_processes") ?? []);
   if (!c.equal(c.get(process, "pane_id") ?? null, pane) || !c.is_int(c.get(process, "shell_pid") ?? null) || !c.equal(c.count(foreground), 1) || !c.equal(c.get(foreground, 0, "pid") ?? null, c.get(process, "shell_pid"))) {
     throw new Error("Herdr placement is not a verified available foreground shell.");
   }
-  placement = c.clone(require("./layout.js").borkLayoutAction("claim", c.entriesArray([["record", c.get(input, "layout_record")], ["role", require("./terminal.js").field(input, "role")], ["slot", c.get(input, "slot") ?? null], ["task_id", require("./terminal.js").field(input, "task_id")], ["target_id", require("./terminal.js").field(input, "target_id")]])));
+  if (layout.version !== 2) claimPlacement();
   /* The claim remains held on an uncertain submission, preventing replay. */
   reply = c.clone(require("./layout-adapters/herdr.js").borkLayoutHerdr(c.get(layout, "context"), ["pane", "run", c.get(placement, "id"), runner]));
   return c.entriesArray([["pane", c.get(placement, "id")], ["role", c.get(input, "role")], ["slot", c.get(input, "slot")], ["layout_record", c.get(input, "layout_record")], ["submission", reply]]);
