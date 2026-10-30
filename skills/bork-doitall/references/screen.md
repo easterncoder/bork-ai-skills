@@ -29,4 +29,4 @@ A retained zombie window or exit code alone never proves phase success. Require 
 
 Resume through recorded session/window/socket identities and reconcile possible mutations first. For another provider turn, use its documented resume controls in a fresh immutable job and unique exit record, after verifying the prior CLI and descendants stopped. Close the old owned session after retaining diagnostics, then launch a fresh session; never use Screen's zombie resurrection key to replay a job. A missing session requires reconciliation from retained records before replacement. Driver changes require the existing revised-plan approval gate.
 
-Maintainers: `python3 -m unittest discover -s skills/bork-doitall/scripts/tests -p 'test_screen.py' -v` exercises real membership, copied context rejection, concurrent roles, collision refusal, output retention, interruption and cleanup without an AI CLI or GitHub request.
+Maintainers: `node tests/run.js test_screen` from the repository root exercises real membership, copied context rejection, concurrent roles, collision refusal, output retention, interruption and cleanup without an AI CLI or GitHub request.
