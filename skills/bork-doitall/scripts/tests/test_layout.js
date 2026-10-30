@@ -196,6 +196,48 @@ class LayoutTests extends Fixture {
     this.assertIn("--no-focus", split);
     this.assertAlmostEqual(Number(split[split.indexOf("--ratio") + 1]), 50 / 200);
   }
+  test_screen_traversal_stops_after_observed_navigation() {
+    /* Replace only the host transport while executing the production navigation guard. */
+    const script = `
+      const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+      const file=path.join(path.dirname(process.argv[1]),'layout-adapters/screen.js');
+      const sandbox={require:require('node:module').createRequire(file),module:{exports:{}},process};
+      vm.runInNewContext(fs.readFileSync(file,'utf8') + \`
+        let focused='entry', controls=[];
+        borkLayoutScreenControl=function(context,args){
+          if(args[0]==='-Q') return focused+' title';
+          controls.push(args); focused=args[2]; return '';
+        };
+        const context={session:'fixture'};
+        let blocked=false;
+        try {
+          screenNavigation(context,()=>{
+            borkLayoutScreen(context,['-X','focus','temporary']);
+            focused='user';
+            try { borkLayoutScreen(context,['-X','resize','10']); }
+            finally { borkLayoutScreen(context,['-X','focus','entry']); }
+          });
+        } catch(error) { blocked=error.message.includes('User navigated'); }
+        if(!blocked || focused!=='user' || controls.length!==1 || navigation.size!==0) throw Error('Navigation guard failed');
+      \`,sandbox);
+    `;
+    const result = run([process.execPath, '-e', script, String(HELPER)], {capture_output: true, text: true});
+    this.assertEqual(result.status, 0, result.stderr);
+  }
+  test_app_restore_uses_entry_focus_and_respects_navigation() {
+    /* A public-control fixture restores only focus caused by the current operation. */
+    const app = P(this.root).join('herdr-app');
+    const state = P(this.root).join('focus.json');
+    app.writeText('#!' + process.execPath + '\nconst fs=require("node:fs");const path=' + json(String(state)) + ';let focus=JSON.parse(fs.readFileSync(path,"utf8"));if(process.argv[2]==="do"){focus=JSON.parse(process.argv[4]).pane;fs.writeFileSync(path,JSON.stringify(focus));}console.log(JSON.stringify({focused_pane:focus}));\n');
+    app.chmod(448);
+    const code = 'const a=require(require("node:path").join(require("node:path").dirname(process.argv[1]),"layout-adapters/hc-app.js"));a.borkLayoutAppRestoreFocus({context:{},original:{focus:"creation"}},"entry","new");';
+    for (const [current, expected] of [['new', 'entry'], ['navigation', 'navigation'], ['entry', 'entry']]) {
+      state.writeText(json(current));
+      const result = run([process.execPath, '-e', code, String(HELPER)], {env: {...process.env, PATH: String(this.root) + nodePath.delimiter + process.env.PATH}, capture_output: true, text: true});
+      this.assertEqual(result.status, 0, result.stderr);
+      this.assertEqual(JSON.parse(state.readText()), expected);
+    }
+  }
   test_real_geometry_focus_and_cleanup() {
     /* All three real tree sizes preserve unrelated panes and focus on cleanup. */
     for (var count of [1, 2, 3]) {
@@ -204,12 +246,14 @@ class LayoutTests extends Fixture {
       });
       this.assertEqual(this.tmux("display-message", "-p", "-t", "fixture", "#{pane_id}"), data.coordinator);
       this.assertEqual(Object.keys(record.resources).length, count * 3 + 1);
+      this.tmux("select-pane", "-t", count === 2 ? record.resources["fix:1"].id : unrelated);
       var cleanup = this.invoke("cleanup", {
         record: data.record,
         results_verified: true,
         descendants_stopped: true
       });
       this.assertTrue(cleanup.ok, cleanup);
+      this.assertEqual(this.tmux("display-message", "-p", "-t", "fixture", "#{pane_id}"), count === 2 ? data.coordinator : unrelated);
       this.assertEqual(new Set(this.tmux("list-panes", "-t", "fixture", "-F", "#{pane_id}").trimEnd().split(/\r?\n/)), new Set([data.coordinator, unrelated]));
       this.tmux("kill-server");
       P(data.record).unlink();
@@ -217,7 +261,8 @@ class LayoutTests extends Fixture {
   }
   test_claim_release_turnover_and_duplicate_guard() {
     /* Cycles reuse placement while active or uncertain launches cannot duplicate it. */
-    var [data, record, _] = this.create();
+    var [data, record, unrelated] = this.create();
+    this.tmux("select-pane", "-t", record.resources["review:1"].id);
     var claim = {
       record: data.record,
       role: "review",
@@ -246,7 +291,9 @@ class LayoutTests extends Fixture {
       worker_stopped: true,
       descendants_stopped: true
     };
+    this.tmux("select-pane", "-t", unrelated);
     this.assertTrue(this.invoke("release", release).ok);
+    this.assertEqual(this.tmux("display-message", "-p", "-t", "fixture", "#{pane_id}"), unrelated);
     [claim.target_id, claim.task_id] = ["i2", "review-2"];
     var second = this.invoke("claim", claim);
     this.assertEqual(first.result.id, second.result.id);
