@@ -6,6 +6,14 @@ const argv = process.argv.slice(1),
     SCRIPT_FILENAME: process.argv[1]
   };
 
+/** Parse the server PID from an exact Screen identity, including default dotted names. */
+function screenSessionPid(session) {
+  if (typeof session !== 'string' || !/^[1-9][0-9]*\.[a-zA-Z0-9_.-]+$/.test(session) || /[\r\n]/.test(session)) {
+    throw new Error('Screen session identity must include its local server PID.');
+  }
+  return session.slice(0, session.indexOf('.'));
+}
+
 /** Verify the exact live Screen window against its ancestral process environment. */
 function detectScreenContext(env, run, ancestor) {
   c.assertType(env, "callable", "detectScreenContext.env");
@@ -61,5 +69,6 @@ function detectScreenContext(env, run, ancestor) {
   return c.entriesArray([["active", true], ["session_id", session], ["pane_id", window], ["socket", session], ["shell_pid", shell], ["socket_dir", c.truth(env("SCREENDIR")) ? env("SCREENDIR") : null]]);
 }
 module.exports = {
+  screenSessionPid,
   detectScreenContext
 };
