@@ -56,6 +56,8 @@ function main() {
                 if (success) assert.equal(result.status, 0, result.stdout+result.stderr); return JSON.parse(result.stdout);
             }
             const result = layout('create').result; assert.equal(result.state, 'ready'); assert.equal(layout('inspect').result.snapshot.focus, pane);
+            const browsing = result.resources['fix:1'].id;
+            command(['herdr-app', 'do', 'pane.focus', json({pane: browsing})]);
             assert.equal(layout('claim', {role: 'review', slot: 1, task_id: 'fixture', target_id: 'i10'}).result.id, result.resources['review:1'].id);
             layout('claim', {role: 'review', slot: 1, task_id: 'duplicate', target_id: 'i10'}, false);
             const role = root.join('role-result.json'); role.writeText(json({status: 'complete'}));
@@ -73,9 +75,10 @@ function main() {
                 layout('release', {placement: 'master:1', task_id: 'master-live', result_path: String(role), results_verified: true, descendants_stopped: true, worker_stopped: true});
             }
             sleep(.2); const current = JSON.parse(command(['herdr-app', 'status']).stdout);
-            assert.equal(current.focused_pane, pane); assert.deepEqual(current.errors, []); assert.deepEqual(current.overlays, []);
+            assert.equal(current.focused_pane, browsing); assert.deepEqual(current.errors, []); assert.deepEqual(current.overlays, []);
             command(['herdr-app', 'shot', String(root.join('adapter-'+concurrency+'.png'))]);
             layout('cleanup', {results_verified: true, descendants_stopped: true});
+            assert.equal(JSON.parse(command(['herdr-app', 'status']).stdout).focused_pane, pane);
             const final = waitDoc(value => leaves(value.spaces[0].tabs.find(item => item.id === tab).root).length === 1);
             assert.deepEqual(final.value.spaces[0].tabs.find(item => item.id === unrelated.id), unrelated);
             summary.push({concurrency, status: 'PASS', record: request.record});

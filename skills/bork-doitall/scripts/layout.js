@@ -40,7 +40,7 @@ function borkLayoutSnapshot(record) {
   }
   return (_match => c.equal(_match, "tmux") ? require("./layout-adapters/tmux.js").borkLayoutTmuxSnapshot(c.get(record, "context"), c.get(record, "coordinator")) : c.equal(_match, "herdr") ? require("./layout-adapters/herdr.js").borkLayoutHerdrSnapshot(c.get(record, "context"), c.get(record, "coordinator")) : c.equal(_match, "hc") ? require("./layout-adapters/hc-app.js").borkLayoutAppSnapshot(c.get(record, "context"), c.get(record, "coordinator")) : c.equal(_match, "screen") ? require("./layout-adapters/screen.js").borkLayoutScreenSnapshot(c.get(record, "context"), c.get(record, "coordinator")) : c.fail(new Error("Visual adapter has no verified geometry interface.")))(c.get(record, "driver"));
 }
-/** Verify placement identity, surrounding panes, geometry and preserved focus. */
+/** Verify placement identity, surrounding panes and geometry independently of user focus. */
 function borkLayoutVerify(record, geometry = true, rendered = true) {
   c.assertType(record, "array", "borkLayoutVerify.record");
   c.assertType(geometry, "bool", "borkLayoutVerify.geometry");
@@ -53,9 +53,6 @@ function borkLayoutVerify(record, geometry = true, rendered = true) {
     throw new Error("Uncertain layout mutation requires reconciliation; do not repeat it.");
   }
   snapshot = c.clone(borkLayoutSnapshot(record));
-  if (!c.equal(c.get(snapshot, "focus"), c.get(record, "original", "focus"))) {
-    throw new Error("User focus changed; pause background layout operations.");
-  }
   for (const [_key, _value] of c.entries(c.get(record, "resources"))) {
     placement = _key;
     resource = c.clone(_value);
@@ -293,6 +290,24 @@ function borkLayoutRelease(input, record) {
   borkLayoutWrite(require("./terminal.js").field(input, "record"), record);
   return c.get(record, "resources", key);
 }
+/** Move focus off a closing owned leaf while preserving unrelated user navigation. */
+function borkLayoutCleanupFocus(record, id) {
+  const snapshot = borkLayoutSnapshot(record);
+  if (snapshot.focus !== id) return;
+  const context = record.context;
+  if (record.driver === 'tmux') {
+    require('./layout-adapters/tmux.js').borkLayoutTmux(context, ['select-pane', '-t', record.coordinator]);
+  } else if (record.driver === 'hc') {
+    require('./layout-adapters/hc-app.js').borkLayoutAppCommand(context, 'pane.focus', {pane: record.coordinator});
+  } else if (record.driver === 'herdr') {
+    /* Every worker has an owned neighbor to its left in the recorded fixed tree. */
+    require('./layout-adapters/herdr.js').borkLayoutHerdr(context, ['pane', 'focus', '--pane', id, '--direction', 'left']);
+    const focused = borkLayoutSnapshot(record).focus;
+    if (!Object.values(record.resources).some(resource => resource.id === focused && resource.id !== id)) {
+      throw new Error('Closing pane has no verified surviving owned focus target.');
+    }
+  }
+}
 /** Remove only idle owned leaves, keeping the coordinator and all surrounding panes. */
 function borkLayoutCleanup(input, record) {
   c.assertType(input, "array", "borkLayoutCleanup.input");
@@ -334,20 +349,17 @@ function borkLayoutCleanup(input, record) {
         continue;
       }
       id = c.clone(c.get(record, "resources", key, "id"));
+      borkLayoutCleanupFocus(record, id);
       c.set(record, ["pending"], "=", c.entriesArray([["close", key], ["id", id]]));
       borkLayoutWrite(path, record);
       if (c.equal(c.get(record, "driver"), "tmux")) {
         require("./layout-adapters/tmux.js").borkLayoutTmux(c.get(record, "context"), ["kill-pane", "-t", id]);
       } else if (c.equal(c.get(record, "driver"), "hc")) {
-        try {
-          require("./layout-adapters/hc-app.js").borkLayoutAppCommand(c.get(record, "context"), "pane.close", c.entriesArray([["pane", id]]));
-          require("./layout-adapters/hc-app.js").borkLayoutAppAwait(c.get(record, "context"), c.get(record, "coordinator"), function (tree) {
-            tree = c.clone(tree);
-            return c.equal(require("./layout-adapters/hc-app.js").borkLayoutAppFind(c.get(tree, "root"), id), null);
-          });
-        } finally {
-          require("./layout-adapters/hc-app.js").borkLayoutAppRestoreFocus(record);
-        }
+        require("./layout-adapters/hc-app.js").borkLayoutAppCommand(c.get(record, "context"), "pane.close", c.entriesArray([["pane", id]]));
+        require("./layout-adapters/hc-app.js").borkLayoutAppAwait(c.get(record, "context"), c.get(record, "coordinator"), function (tree) {
+          tree = c.clone(tree);
+          return c.equal(require("./layout-adapters/hc-app.js").borkLayoutAppFind(c.get(tree, "root"), id), null);
+        });
       } else {
         require("./layout-adapters/herdr.js").borkLayoutHerdr(c.get(record, "context"), ["pane", "close", id]);
       }
