@@ -66,6 +66,7 @@ function launchScreen(data, path) {
       throw new Error("Screen launch requires its recorded Screen layout.");
     }
     placement = c.clone(require("./layout.js").borkLayoutAction("claim", c.array_replace(data, c.entriesArray([["record", c.get(data, "layout_record")]]))));
+    if (!c.get(placement, "id")) throw new Error("Visual admission is waiting or blocked; retain capacity result before launching a worker.");
     command = c.clone(require("./terminal.js").terminalCommand([c.NODE_BINARY, c.string(__dirname) + c.string("/tmux.js"), "run", path], "posix"));
     require("./layout-adapters/screen.js").borkLayoutScreen(c.get(layout, "context"), ["-p", c.get(placement, "id"), "-X", "stuff", c.string(command) + c.string("\n")]);
     return c.entriesArray([["session", c.get(layout, "context", "session")], ["pane", c.get(placement, "id")], ["role", c.get(data, "role")], ["socket_dir", c.get(layout, "context", "socket_dir") ?? null], ["layout_record", c.get(data, "layout_record")]]);

@@ -16,7 +16,7 @@ function borkLayoutHerdr(context, args) {
   if (!c.equal(c.getenv("HERDR_ENV"), "1")) {
     throw new Error("Herdr layout requires verified inherited HERDR_ENV=1 membership.");
   }
-  reply = c.clone(c.json_decode(require("../terminal.js").execute(c.array_merge(["herdr"], args)), true, 512, c.JSON_THROW_ON_ERROR));
+  reply = c.clone(c.json_decode(require("../terminal.js").execute(c.array_merge(context.session ? ["herdr", "--session", require("../terminal.js").field(context, "session")] : ["herdr"], args)), true, 512, c.JSON_THROW_ON_ERROR));
   if (c.get(reply, "error") != null || !c.is_array(c.get(reply, "result") ?? null)) {
     throw new Error("Herdr response lacks verified result identity.");
   }
