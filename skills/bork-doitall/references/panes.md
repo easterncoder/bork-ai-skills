@@ -77,6 +77,6 @@ An interactive blocker is a question, confirmation or permission prompt addresse
 
 At the first detection, the master reports a child blocker to the coordinator with the target, role, agent ID and exact prompt. The coordinator immediately messages the user with that prompt and the host's agent navigation path; for Herdr, include the recorded pane ID and focus/attach commands from its execution contract; for tmux, include the master attach command and pane ID. It also inspects master status for direct prompts. Continue independent targets and avoid repeated notifications for the same unanswered prompt. Do not treat a child waiting for approval as ordinary silent progress.
 
-Maintainers: run `python3 <skill>/scripts/tests/test_batch.py` for offline transition and interruption tests, and `python3 <skill>/scripts/tests/test_tmux.py` for isolated queue and real-tmux smoke tests. They launch harmless local fixtures, never an AI or GitHub action. Python is only a test dependency.
+Maintainers: run `node tests/run.js test_batch` from the repository root for offline transition and interruption tests, and `node tests/run.js test_tmux` for isolated queue and real-tmux smoke tests. They launch harmless local fixtures, never an AI or GitHub action. Tests use Node.js 22+ without package installation.
 
 For Screen discovery, launching, navigation, lifecycle and resume, follow the [GNU Screen contract](screen.md). Screen follows tmux in selection priority. Preserve any recorded driver on resume. The shared runner is used by all three terminal drivers.

@@ -25,7 +25,7 @@ Run `wait` in a foreground tool call with a timeout allowing its bounded wait to
 
 Use `cleanup-check` after removing only recorded disposable artifacts. A locally removable worktree still requires verified remote publication, stopped workers, and the skill's other cleanup conditions. Signature verification is mechanical only; record scope/Conventional Commit checks separately. Keep verified SHA lists so later phases check new commits only, unless signing trust/configuration changed.
 
-Maintainers can run `python3 <skill>/scripts/tests/test_workflow.py` for isolated behavior checks. Python is a test-only dependency; the runtime needs Node.js 22+ and Git. The positive SSH-signature fixture additionally uses `ssh-keygen` when available. No tests access GitHub.
+Maintainers can run `node tests/run.js test_workflow` from the repository root for isolated behavior checks. Tests and runtime need Node.js 22+ and Git, without package installation. The positive SSH-signature fixture additionally uses `ssh-keygen` when available. No tests access GitHub.
 
 For explicit doitall runs, the owner resolves the required author email once from applicable user/repository commit instructions, falling back to local Git author configuration/environment (for example `git var GIT_AUTHOR_IDENT`) when no explicit email is required, records it as `commit_email`, and passes it as `email` to `verify-commits`. Do not infer Git commit email from a GitHub login or change the user's configuration. Other invocations keep the existing email default.
 
@@ -83,4 +83,4 @@ Promotion uses `mode: "promotion"`, exactly one `review` signal for the verified
 
 Only assess complete, fresh snapshots. The helper rejects mismatched hashes, SHA mismatches and assessments more than 60 seconds after their poll. It requires all expected signals, explicit review completions and quiet periods where applicable; it never treats silence as bot completion. `skipped_draft` follows goodcode's draft rules; in doitall's ready gate it blocks the ready-workflow requirement. `complete` carries failed-check IDs as review feedback. No-start after ten minutes blocks promotion; known started pending work has no runtime timeout. Retain the saved state/evidence in the run records. The helper performs no requests, replies, pushes, promotions or source fixes.
 
-Maintainers also run `python3 <skill>/scripts/tests/test_evidence.py` for offline paginated API, evidence-reuse and automation-gate fixtures. No live GitHub requests are made.
+Maintainers also run `node tests/run.js test_evidence` from the repository root for offline paginated API, evidence-reuse and automation-gate fixtures. No live GitHub requests are made.

@@ -83,7 +83,7 @@ Inside Claude Code, the equivalent install commands are `/plugin marketplace add
 
 ## Requirements and behavior
 
-Use a host with terminal access, Git, authenticated GitHub CLI (`gh`), Node.js 22+ from a maintained LTS line, util-linux `flock` on Linux for serialized batch/layout mutations, and Python 3 for the offline tests. Signing workflows need a configured signing key and signature verification trust. Standalone goodcode also selects hc, Herdr, tmux, Screen, then native for its concurrent review/fix workers. Doitall selects the active environment: hc first, otherwise Herdr, otherwise tmux, otherwise Screen, otherwise native. It verifies live membership separately from capacity and blocks invalid explicit context or an incapable selected driver without falling back. Herdr requires an inherited Herdr TUI context and a reachable compatible session API; installation alone is insufficient. All terminal drivers require the invoking host's CLI; doitall additionally requires native prify/goodcode child capacity. Terminal membership requires a supported process-ancestry probe (`ps -eo pid=,ppid=` in the shared helper), and launch commands use the destination shell's quoting. Native mode requires the full nested agent capacity documented in the skill. Herdr, tmux and Screen are optional; tmux integration tests require tmux; Screen tests require GNU Screen and Linux procfs. A skills-only plugin does not supply these executables or credentials. The helpers use CommonJS and Node built-ins without npm installation or a build step. See the [runtime dependency and upgrade contract](skills/bork-review/references/portable-runtime.md#runtime-dependencies-and-upgrades) for locking, platform support and coexistence with existing batches.
+Use a host with terminal access, Git, authenticated GitHub CLI (`gh`), Node.js 22+ from a maintained LTS line, util-linux `flock` on Linux for serialized batch/layout mutations. Signing workflows need a configured signing key and signature verification trust. Standalone goodcode also selects hc, Herdr, tmux, Screen, then native for its concurrent review/fix workers. Doitall selects the active environment: hc first, otherwise Herdr, otherwise tmux, otherwise Screen, otherwise native. It verifies live membership separately from capacity and blocks invalid explicit context or an incapable selected driver without falling back. Herdr requires an inherited Herdr TUI context and a reachable compatible session API; installation alone is insufficient. All terminal drivers require the invoking host's CLI; doitall additionally requires native prify/goodcode child capacity. Terminal membership requires a supported process-ancestry probe (`ps -eo pid=,ppid=` in the shared helper), and launch commands use the destination shell's quoting. Native mode requires the full nested agent capacity documented in the skill. Herdr, tmux and Screen are optional; tmux integration tests require tmux; Screen tests require GNU Screen and Linux procfs. A skills-only plugin does not supply these executables or credentials. The helpers use CommonJS and Node built-ins without npm installation or a build step. See the [runtime dependency and upgrade contract](skills/bork-review/references/portable-runtime.md#runtime-dependencies-and-upgrades) for locking, platform support and coexistence with existing batches.
 
 BORK defaults to the `generic` profile. Supply an absolute Markdown profile path with `PROFILE=/absolute/path/to/profile.md` for organization-specific rules. The package includes no organization profile or wrapper. Profile propagation and retained snapshots are documented in [the profile contract](skills/bork-doitall/references/profile.md).
 
@@ -108,9 +108,10 @@ Keep the skills together: their relative sibling links resolve when installed as
 Run the offline helper suites from the repository root:
 
 ```bash
-python3 -m unittest discover -s skills/bork-doitall/scripts/tests -v
-python3 -m unittest discover -s skills/bork-review/scripts/tests -v
+node tests/run.js
 ```
+
+See [test commands and prerequisites](tests/README.md) for individual suites and running from another directory. No package installation or Python interpreter is needed.
 
 The doitall suite uses isolated tmux sockets and private GNU Screen socket directories. The review suite verifies SSH-signed fixture commits when `ssh-keygen` is available. Neither suite runs an AI workflow or contacts GitHub.
 
@@ -118,7 +119,7 @@ Packaging follows [OpenAI's plugin format](https://developers.openai.com/plugins
 
 GNU Screen execution uses the same role jobs, terminal runner and recovery gates as Herdr/tmux. See the [Screen contract](skills/bork-doitall/references/screen.md) for capabilities, navigation and lifecycle controls.
 
-The separate [hc execution driver](skills/bork-doitall/references/hc.md) verifies caller terminal/core identity and installed lifecycle capabilities. It launches interactive agents, hidden in headless mode, requires Codex `--no-daemon`, reconciles initial-task delivery and blocked prompts, and distinguishes accepted turns from final owned-process shutdown. `herdr-app` is optional and used only for requested visible UI changes. Offline hc fixtures run with `python3 -m unittest discover -s skills/bork-doitall/scripts/tests -p test_hc.py`.
+The separate [hc execution driver](skills/bork-doitall/references/hc.md) verifies caller terminal/core identity and installed lifecycle capabilities. It launches interactive agents, hidden in headless mode, requires Codex `--no-daemon`, reconciles initial-task delivery and blocked prompts, and distinguishes accepted turns from final owned-process shutdown. `herdr-app` is optional and used only for requested visible UI changes. Offline hc fixtures run with `node tests/run.js test_hc`.
 
 
 ## Visible workflow layout
@@ -127,4 +128,4 @@ The [shared layout contract](skills/bork-doitall/references/layout.md) defines o
 
 Private real tmux, Herdr TUI, Herdr App/hc and GNU Screen validation covers concurrency 1/2/3 geometry and owned cleanup. App/hc also verifies stable visible worker binding and restart reconciliation; Screen verifies exact display discovery and saved-layout restoration. Headless hc and existing approved helper inputs remain compatible. No shared app is opened automatically. Provider trust/crash paths and untested platforms remain explicit validation limits. See the contract for focus, geometry and recovery details.
 
-Run `PYTHONDONTWRITEBYTECODE=1 python3 skills/bork-doitall/scripts/tests/test_layout.py` for shared planner and isolated tmux validation.
+Run `node tests/run.js test_layout` for shared planner and isolated tmux validation.
