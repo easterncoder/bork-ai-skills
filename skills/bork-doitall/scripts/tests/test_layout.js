@@ -41,7 +41,7 @@ class LayoutTests extends Fixture {
     /* Invoke the public helper with an immutable JSON request. */
     this.index += 1;
     var path = P(this.root).join("input-" + String(this.index) + ".json");
-    path.writeText(json(data));
+    path.writeText(json({lifecycle: "fixed", ...data}));
     var proc = run([process.execPath, String(helper), action, String(path)], {
       "capture_output": true,
       "text": true,
@@ -416,6 +416,7 @@ class LayoutTests extends Fixture {
       }
     };
     var record = {
+      version: 1,
       driver: "hc",
       state: "ready",
       run_id: "batch",
@@ -488,7 +489,7 @@ class LayoutTests extends Fixture {
       terminal_path.writeText(json(identity));
       this.index += 1;
       var request_path = P(this.root).join("bind-" + String(this.index) + ".json");
-      request_path.writeText(json(data));
+      request_path.writeText(json({lifecycle: "fixed", ...data}));
       var proc = run([process.execPath, String(HELPER), "bind", String(request_path)], {
         "env": env,
         "capture_output": true,

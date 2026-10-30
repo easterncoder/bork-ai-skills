@@ -17,7 +17,7 @@ function navigationKey(context) {
 function screenControlChangesFocus(args) {
   const index = args.indexOf('-X');
   const command = args[index + 1];
-  return index !== -1 && (['focus', 'screen', 'kill'].includes(command) ||
+  return index !== -1 && (['focus', 'screen', 'kill', 'remove', 'select'].includes(command) ||
     (command === 'layout' && args[index + 2] === 'select'));
 }
 
@@ -597,6 +597,7 @@ function borkLayoutScreenMessage(context, predicate) {
   throw new Error("Screen did not confirm control completion; preserve pending intent.");
 }
 module.exports = {
+  screenNavigation,
   borkLayoutScreen,
   borkLayoutScreenContext,
   borkLayoutScreenCapabilities,

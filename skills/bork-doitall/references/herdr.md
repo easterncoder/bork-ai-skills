@@ -1,7 +1,7 @@
 # Herdr Execution
 
 
-For batches carrying a layout journal, [shared layout](../../bork-doitall/references/layout.md) supersedes the separate-session/sibling-pane placement instructions below. Use the recorded role slot and retain its pane through target turnover. Existing approved runs and standalone launches without a journal keep their original lifecycle contract. App/hc and Screen use the verified public tree/display adapters described in that contract; enforce their precise context, geometry and recovery gates.
+For batches carrying a layout journal, [shared layout](../../bork-doitall/references/layout.md) supersedes the separate-session/sibling-pane placement instructions below. Use the recorded stable role slot. V2 creates only imminent workers and removes each accepted, stopped role pane; later passes recreate it with a new task identity. V1 retains its recorded fixed panes through turnover. Existing approved runs and standalone launches without a journal keep their original lifecycle contract. App/hc and Screen use the verified public tree/display adapters described in that contract; enforce their precise context, geometry and recovery gates.
 
 Use this contract for `execution_driver: herdr`. Herdr hosts target masters; the master's prify/goodcode remain native subagents, while goodcode uses this same terminal contract for its review/fix workers under [worker execution](../../bork-goodcode/references/execution.md). In worker mode, substitute the owning goodcode agent, worker role and worker result/acknowledgment for the coordinator, master and target result below; no batch `reserve` or `started` is performed by workers. The shared [agent execution contract](panes.md) owns driver priority, capacity and role boundaries.
 

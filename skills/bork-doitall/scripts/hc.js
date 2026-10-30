@@ -170,6 +170,7 @@ function hcAction(action, input, run) {
         throw new Error("App layout and worker must use the same recorded core/session.");
       }
       c.set(record, ["placement"], "=", require("./layout.js").borkLayoutAction("claim", c.array_replace(input, c.entriesArray([["record", c.get(input, "layout_record")]]))));
+      if (!c.get(c.get(record, "placement"), "id")) throw new Error("Visual admission is waiting or blocked; retain capacity result before launching a worker.");
     }
     hcRecord(path, record);
     /* The CLI task is in argv at launch, never sent to a booting agent. */
@@ -276,7 +277,10 @@ function hcAction(action, input, run) {
       throw new Error("hc process has not stopped.");
     }
     c.set(record, ["exit_terminal"], "=", terminal);
-    hcLayoutShow(record, false);
+    const layoutJournal = record.layout_record ? require('./terminal.js').readInput(record.layout_record) : null;
+    if (layoutJournal?.version === 2) {
+      require('./layout.js').borkLayoutAction('release', {record: record.layout_record, placement: `${record.role}:${record.slot}`, task_id: record.task_id, result_path: require('./terminal.js').field(input, 'result_path'), results_verified: true, worker_stopped: true, descendants_stopped: true});
+    } else hcLayoutShow(record, false);
     c.set(record, ["remove_reply"], "=", hcReply(["rm", c.get(record, "terminal_id")], run));
     if (!c.equal(c.get(record, "remove_reply", "removed") ?? null, c.get(record, "terminal_id"))) {
       throw new Error("hc removal response does not match the owned terminal.");

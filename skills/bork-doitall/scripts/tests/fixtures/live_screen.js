@@ -29,7 +29,7 @@ function main() {
             const serverPid = Number(exact.split('.')[0]);
             const childPid = fs.readFileSync(`/proc/${serverPid}/task/${serverPid}/children`, 'utf8').trim().split(/\s+/)[0];
             const windowTty = fs.readlinkSync(`/proc/${childPid}/fd/0`);
-            const request = {driver: 'screen', context: {session: exact, socket_dir: String(root), window_tty: windowTty}, coordinator: '0', concurrency, run_id: 'fixture'+concurrency, cwd: String(root), record: String(root.join('layout.json'))};
+            const request = {lifecycle: 'fixed', driver: 'screen', context: {session: exact, socket_dir: String(root), window_tty: windowTty}, coordinator: '0', concurrency, run_id: 'fixture'+concurrency, cwd: String(root), record: String(root.join('layout.json'))};
             /* Invoke the production layout adapter with immutable request data. */
             function layout(action, extra = {}) {
                 const input = root.join('input.json'); input.writeText(json({...request, ...extra}));
