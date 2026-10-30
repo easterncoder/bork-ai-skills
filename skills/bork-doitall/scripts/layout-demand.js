@@ -144,6 +144,53 @@ function ownedTree(plan, resources) {
 /** Persist one journal revision using the shared atomic writer. */
 function save(record) { require('./layout.js').borkLayoutWrite(record.record, record); }
 
+/** Retain stable pane geometry and identity without transient shell state. */
+function checkpoint(record) {
+  if (record.driver === 'herdr') {
+    const adapter = require('./layout-adapters/herdr.js');
+    const snapshot = adapter.borkLayoutHerdr(record.context, ['api', 'snapshot']).snapshot;
+    const layouts = snapshot.layouts.map(layout => ({tab_id: layout.tab_id, workspace_id: layout.workspace_id, area: layout.area, panes: layout.panes.map(pane => ({pane_id: pane.pane_id, rect: pane.rect})).sort((a, b) => a.pane_id.localeCompare(b.pane_id))})).sort((a, b) => a.tab_id.localeCompare(b.tab_id));
+    const terminals = snapshot.panes.map(pane => ({id: pane.pane_id, tab: pane.tab_id, terminal: pane.terminal_id})).sort((a, b) => a.id.localeCompare(b.id));
+    const identities = Object.values(record.resources).map(resource => resource.id);
+    if (record.pending?.returned_id && !identities.includes(record.pending.returned_id)) identities.push(record.pending.returned_id);
+    const live = new Set(snapshot.panes.map(pane => pane.pane_id));
+    const shells = Object.fromEntries(identities.filter(id => live.has(id)).sort().map(id => [id, adapter.borkLayoutHerdr(record.context, ['pane', 'process-info', '--pane', id]).process_info.shell_pid]));
+    return {layouts, terminals, shells};
+  }
+  const panes = require('./layout.js').borkLayoutSnapshot(record).panes;
+  const geometry = Object.fromEntries(Object.entries(panes).sort(([a], [b]) => a.localeCompare(b)).map(([id, pane]) => [id, Object.fromEntries(['id', 'window', 'session', 'x', 'y', 'width', 'height', 'pid', 'owner', 'placement', 'terminal', 'created_ms'].filter(key => pane[key] !== undefined).map(key => [key, pane[key]]))]));
+  if (record.driver !== 'screen') return geometry;
+  const windows = require('./layout-adapters/screen.js').borkLayoutScreen(record.context, ['-Q', 'windows', '%n|%f;']).split(';').map(entry => entry.trim().split('|')[0]).filter(Boolean).sort();
+  const owned = Object.entries(record.resources).filter(([key, resource]) => key !== 'coordinator' && windows.includes(resource.id));
+  if (record.pending?.returned_id && !owned.some(([, resource]) => resource.id === record.pending.returned_id) && windows.includes(record.pending.returned_id)) owned.push([record.pending.key, {id: record.pending.returned_id}]);
+  const processes = Object.fromEntries(owned.sort(([a], [b]) => a.localeCompare(b)).map(([key, resource]) => {
+    const pid = Number(fs.readFileSync(`${record.record}.${key.replace(':', '-')}.pid`, 'utf8').trim());
+    if (!Number.isInteger(pid) || pid < 1) throw new Error('Screen worker process identity is unavailable.');
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+    return [key, {id: resource.id, pid, start: stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]}];
+  }));
+  const server = require('./screen-context.js').screenSessionPid(record.context.session);
+  const children = fs.readFileSync(`/proc/${server}/task/${server}/children`, 'utf8').trim().split(/\s+/).filter(Boolean).sort().map(pid => {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+    return {pid, start: stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]};
+  });
+  return {geometry, windows, processes, children};
+}
+
+/** Confirm a split did not change unrelated panes before adopting its checkpoint. */
+function verifySplit(record) {
+  const pending = record.pending;
+  const after = require('./layout.js').borkLayoutSnapshot(record).panes;
+  const parent = record.resources[pending.operation.parent].id;
+  const allowed = new Set([...Object.keys(pending.before.panes), pending.returned_id]);
+  if (Object.keys(after).some(id => !allowed.has(id)) || !after[pending.returned_id]) throw new Error('Split produced an unexpected pane; retain pending intent.');
+  for (const [id, pane] of Object.entries(pending.before.panes)) {
+    const current = after[id];
+    if (!current || ['window', 'session', 'pid', 'owner', 'placement', 'terminal', 'created_ms'].some(key => pane[key] !== undefined && pane[key] !== current[key])) throw new Error('Split changed a pane identity; retain pending intent.');
+    if (id !== parent && ['x', 'y', 'width', 'height'].some(key => pane[key] !== current[key])) throw new Error('Split changed unrelated pane geometry; retain pending intent.');
+  }
+}
+
 /** Resolve separator semantics for the selected host. */
 function gap(record) { return record.driver === 'herdr' ? 0 : 1; }
 
@@ -274,6 +321,10 @@ function claim(input, record) {
   const id = require('./layout-demand-host.js').split(record, operation);
   record.pending.returned_id = id;
   save(record);
+  verifySplit(record);
+  record.pending.checkpoint = checkpoint(record);
+  record.pending.uncertain = false;
+  save(record);
   adoptSplit(record);
   finish(record);
   return record.resources[key];
@@ -322,6 +373,7 @@ function release(input, record) {
   topology[slot] = topology[slot].filter(value => value !== role);
   if (!topology[slot].length) delete topology[slot];
   record.pending = {kind: 'close', key: input.placement, resource, desired_plan: planFor(record, topology), before: snapshot, result_path: input.result_path};
+  record.pending.checkpoint = checkpoint(record);
   save(record);
   require('./layout-demand-host.js').step(record, `close:${resource.id}`, () => require('./layout-demand-host.js').close(record, resource.id));
   acceptRemoval(record);
@@ -332,6 +384,9 @@ function release(input, record) {
 /** Resume known-ID reflow after helper restart without recreating or relaunching workers. */
 function reconcile(input, record) {
   if (!record.pending) return {state: 'ready', snapshot: verify(record)};
+  if (!record.pending.checkpoint) throw new Error('Pending host checkpoint is unavailable; preserve the journal and inspect the host.');
+  const actual = checkpoint(record);
+  if (JSON.stringify(actual) !== JSON.stringify(record.pending.checkpoint)) throw new Error('Pending host checkpoint changed or mutation completion is uncertain; preserve the journal and user geometry.');
   if (record.pending.kind === 'split') adoptSplit(record);
   else if (record.pending.kind === 'close') {
     const id = record.pending.resource.id;
@@ -357,4 +412,4 @@ function cleanup(input, record) {
   return {state: 'cleaned', coordinator: record.coordinator};
 }
 
-module.exports = {groupsFor, demandPlan, topologyFor, parseTree, formatTree, ownedTree, verify, create, admission, cancelAdmission, claim, release, reconcile, cleanup};
+module.exports = {groupsFor, demandPlan, topologyFor, parseTree, formatTree, ownedTree, checkpoint, verify, create, admission, cancelAdmission, claim, release, reconcile, cleanup};

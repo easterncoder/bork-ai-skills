@@ -8,12 +8,41 @@ const s = require('./layout-adapters/screen.js');
 
 /** Preserve intent before each externally visible reflow step. */
 function step(record, label, callback) {
+  if (record.pending.checkpoint && !record.pending.blank_region) {
+    const current = require('./layout-demand.js').checkpoint(record);
+    if (JSON.stringify(current) !== JSON.stringify(record.pending.checkpoint)) throw new Error('Pending host checkpoint changed; preserve the journal and user geometry.');
+  }
   record.pending.step = label;
+  record.pending.uncertain = true;
   require('./layout.js').borkLayoutWrite(record.record, record);
   const result = callback();
   record.pending.completed_steps ??= [];
   record.pending.completed_steps.push(label);
+  if (record.driver === 'screen' && label.startsWith('split:')) {
+    record.pending.blank_checkpoint = record.pending.checkpoint;
+    record.pending.blank_region = true;
+  }
+  if (record.driver === 'screen' && label.startsWith('select:')) record.pending.blank_region = false;
+  let failure;
+  try {
+    if (record.pending.blank_region) throw new Error('Screen has an unbound region.');
+    const observed = require('./layout-demand.js').checkpoint(record);
+    if (record.pending.blank_checkpoint) {
+      const before = record.pending.blank_checkpoint.geometry;
+      for (const id of Object.keys(record.original.panes).filter(id => id !== record.coordinator)) {
+        if (JSON.stringify(before[id]) !== JSON.stringify(observed.geometry[id])) throw new Error('Foreign Screen geometry changed while binding a region.');
+      }
+      delete record.pending.blank_checkpoint;
+    }
+    record.pending.checkpoint = observed;
+    record.pending.uncertain = false;
+  } catch (error) {
+    record.pending.checkpoint = null;
+    record.pending.checkpoint_error = error.message;
+    if (!record.pending.blank_region) failure = error;
+  }
   require('./layout.js').borkLayoutWrite(record.record, record);
+  if (failure) throw failure;
   return result;
 }
 

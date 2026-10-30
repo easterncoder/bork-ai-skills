@@ -23,10 +23,19 @@ act('create',{driver:'screen',context:ctx,coordinator:'0',concurrency:3,cwd:Stri
 for(const slot of (process.env.BORK_DEMAND_RECOVERY_ONLY==='1'?[1]:[2,1,3]))for(const role of (process.env.BORK_DEMAND_RECOVERY_ONLY==='1'?['master']:['master','fix','review']))act('claim',{role,slot,target_id:'t'+slot,task_id:role+slot});
 const result=String(dir.join('result.json'));fs.writeFileSync(result,JSON.stringify({status:'complete'}));
 if(process.env.BORK_DEMAND_RECOVERY_ONLY==='1'){
- const host=require(root+'/skills/bork-doitall/scripts/layout-demand-host.js'),demand=require(root+'/skills/bork-doitall/scripts/layout-demand.js'),original=host.close;
+ const demand=require(root+'/skills/bork-doitall/scripts/layout-demand.js'),original=a.borkLayoutScreen;
  /** Simulate helper loss after removing the region but before killing its retained window. */
- host.close=(journal,id)=>{a.borkLayoutScreenFocus(ctx,id);a.borkLayoutScreen(ctx,['-X','remove']);throw Error('injected after region removal');};
- try{assert.throws(()=>demand.release({placement:'master:1',task_id:'master1',result_path:result,results_verified:true,worker_stopped:true,descendants_stopped:true},JSON.parse(fs.readFileSync(record))),/injected/);}finally{host.close=original;}
+ a.borkLayoutScreen=(context,args,...rest)=>{if(args.includes('kill'))throw Error('injected after region removal');return original(context,args,...rest);};
+ try{assert.throws(()=>demand.release({placement:'master:1',task_id:'master1',result_path:result,results_verified:true,worker_stopped:true,descendants_stopped:true},JSON.parse(fs.readFileSync(record))),/injected/);}finally{a.borkLayoutScreen=original;}
+ if(process.env.BORK_DEMAND_RECOVERY_DRIFT==='1') {
+  focus('1');x('resize','-v','15');focus('0');
+  const before=snap(),pending=JSON.parse(fs.readFileSync(record)).pending,file=String(dir.join('reconcile-drift.json'));
+  fs.writeFileSync(file,JSON.stringify({record}));
+  const response=JSON.parse(run([process.execPath,root+'/skills/bork-doitall/scripts/layout.js','reconcile',file],{env,stdin:{fd},timeout:180}).stdout);
+  assert.equal(response.ok,false);assert.deepEqual(snap().panes,before.panes);assert.deepEqual(JSON.parse(fs.readFileSync(record)).pending,pending);
+  console.log('PASS hidden-window drift preserved');
+  return;
+ }
  act('reconcile');
  assert.ok(!a.borkLayoutScreen(ctx,['-Q','windows','%n|%f;']).split(';').some(entry=>entry.trim().startsWith('2|')));
  console.log('PASS hidden-window close recovery');

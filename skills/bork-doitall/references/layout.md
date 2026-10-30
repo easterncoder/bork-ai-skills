@@ -46,6 +46,8 @@ Use the selected maintained Node binary: `node <skill>/scripts/layout.js <action
 
 A pending journal blocks ordinary claim/release. Each host step retains its name, completed steps, before snapshot, desired plan, task identities and returned IDs. Reconcile known leaves from actual host state; never blindly replay a split or assume an interrupted close failed. A host server dying does not prove any worker result. App restart may lose transient hc view bindings; reapply saved owned bindings with `hc.js reconcile` before accepting rendered geometry.
 
+Recovery compares the live pane geometry and identities with a durable checkpoint before another mutation. Each host step records uncertainty before the command and a new checkpoint after observing its result. If the command outcome or an unbound Screen region cannot be measured, the journal remains pending for inspection. A legacy pending journal without a checkpoint is also retained for inspection rather than replayed.
+
 ## Consumers and phase ownership
 
 Pass the same `layout_record`, stable `slot`, `target_id` and unique `task_id` through every master and goodcode handoff. tmux launch claims then respawns only the returned pane. Herdr launch creates/claims then verifies the foreground shell before submitting the shared runner. Screen launch claims one same-session window; per-role close never quits the shared session. Accept results, stop workers and native descendants, then release the physical role.

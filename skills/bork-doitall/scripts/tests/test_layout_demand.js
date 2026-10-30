@@ -134,6 +134,73 @@ test('private tmux reflow failure survives helper restart with exact retained id
   });
 });
 
+/** Refuse a user resize while preserving the pending split and every pane. */
+test('pending recovery preserves foreign resize and journal', {skip: cp.spawnSync('tmux', ['-V']).status !== 0}, () => {
+  fixture(200, 50, f => {
+    const foreign = f.tmux('split-window', '-d', '-h', '-l', '30', '-P', '-F', '#{pane_id}', '-t', f.coordinator);
+    const record = f.action('create', {driver: 'tmux', context: f.context, coordinator: f.coordinator, concurrency: 1, cwd: f.directory, run_id: 'recovery-drift'});
+    const original = host.reflow;
+    host.reflow = () => { throw new Error('interrupted before reflow'); };
+    try { assert.throws(() => demand.claim(identity('master', 1), record), /interrupted/); }
+    finally { host.reflow = original; }
+    const before = JSON.parse(fs.readFileSync(f.record));
+    f.tmux('resize-pane', '-t', foreign, '-x', '45');
+    const changed = f.action('inspect').snapshot;
+    const result = f.action('reconcile', {}, false);
+    assert.match(result.error, /checkpoint|drift|changed/i);
+    const after = f.action('inspect');
+    assert.deepEqual(after.snapshot.panes, changed.panes);
+    assert.deepEqual(after.record.pending, before.pending);
+  });
+});
+
+/** Recover a completed intermediate mutation and reject later user drift. */
+test('journaled intermediate reflow checks the live checkpoint before replay', {skip: cp.spawnSync('tmux', ['-V']).status !== 0}, () => {
+  for (const drift of [false, true]) fixture(200, 50, f => {
+    const foreign = f.tmux('split-window', '-d', '-h', '-l', '30', '-P', '-F', '#{pane_id}', '-t', f.coordinator);
+    const record = f.action('create', {driver: 'tmux', context: f.context, coordinator: f.coordinator, concurrency: 1, cwd: f.directory, run_id: 'intermediate'});
+    const original = host.reflow;
+    host.reflow = journal => {
+      host.step(journal, 'private-resize', () => f.tmux('resize-pane', '-t', f.coordinator, '-x', '60'));
+      throw new Error('interrupted after step');
+    };
+    try { assert.throws(() => demand.claim(identity('master', 1), record), /interrupted/); }
+    finally { host.reflow = original; }
+    const pending = JSON.parse(fs.readFileSync(f.record)).pending;
+    assert.equal(pending.uncertain, false);
+    if (drift) {
+      f.tmux('resize-pane', '-t', foreign, '-x', '45');
+      const changed = f.action('inspect').snapshot.panes;
+      f.action('reconcile', {}, false);
+      assert.deepEqual(f.action('inspect').snapshot.panes, changed);
+      assert.deepEqual(JSON.parse(fs.readFileSync(f.record)).pending, pending);
+    } else {
+      f.action('reconcile');
+      release(f, 'master', 1);
+    }
+  });
+});
+
+/** Preserve uncertain command evidence when the host changed before an error. */
+test('uncertain reflow does not replay an unconfirmed mutation', {skip: cp.spawnSync('tmux', ['-V']).status !== 0}, () => {
+  fixture(150, 40, f => {
+    const record = f.action('create', {driver: 'tmux', context: f.context, coordinator: f.coordinator, concurrency: 1, cwd: f.directory, run_id: 'uncertain'});
+    const original = host.reflow;
+    host.reflow = journal => host.step(journal, 'uncertain-resize', () => {
+      f.tmux('resize-pane', '-t', f.coordinator, '-x', '50');
+      throw new Error('lost response');
+    });
+    try { assert.throws(() => demand.claim(identity('master', 1), record), /lost response/); }
+    finally { host.reflow = original; }
+    const before = f.action('inspect');
+    assert.equal(before.record.pending.uncertain, true);
+    f.action('reconcile', {}, false);
+    const after = f.action('inspect');
+    assert.deepEqual(after.snapshot.panes, before.snapshot.panes);
+    assert.deepEqual(after.record.pending, before.record.pending);
+  });
+});
+
 /** Couple queue reservation to measured admission, retaining queued targets until wake. */
 test('batch reservations honor pair headroom and wake queued targets after cancellation', {skip: cp.spawnSync('tmux', ['-V']).status !== 0}, () => {
   fixture(120, 22, f => {
