@@ -6,8 +6,60 @@ const argv = process.argv.slice(1),
     SCRIPT_FILENAME: process.argv[1]
   };
 
-/** Execute a Screen control through one verified attached display's exact tty. */
+const navigation = new Map();
+
+/** Identify a synchronous scope shared by nested operations in this Screen session. */
+function navigationKey(context) {
+  return context.session;
+}
+
+/** Identify controls that can change the displayed window. */
+function screenControlChangesFocus(args) {
+  const index = args.indexOf('-X');
+  const command = args[index + 1];
+  return index !== -1 && (['focus', 'screen', 'kill'].includes(command) ||
+    (command === 'layout' && args[index + 2] === 'select'));
+}
+
+/** Guard temporary traversal against observed user navigation without replaying controls. */
 function borkLayoutScreen(context, args, confirm = true) {
+  const scope = navigation.get(navigationKey(context));
+  if (scope?.busy) return borkLayoutScreenControl(context, args, confirm);
+  if (scope) {
+    const current = borkLayoutScreenControl(context, ['-Q', 'number']).split(' ', 1)[0];
+    if (scope.interrupted || current !== scope.focus) {
+      scope.interrupted = true;
+      throw new Error('User navigated during temporary Screen traversal; retain intent and reconcile without restoring stale focus.');
+    }
+  }
+  if (scope) scope.busy = true;
+  try {
+    const result = borkLayoutScreenControl(context, args, confirm);
+    if (scope) {
+      const current = borkLayoutScreenControl(context, ['-Q', 'number']).split(' ', 1)[0];
+      if (!screenControlChangesFocus(args) && current !== scope.focus) {
+        scope.interrupted = true;
+        throw new Error('User navigated during temporary Screen traversal; retain intent and reconcile without restoring stale focus.');
+      }
+      scope.focus = current;
+    }
+    return result;
+  } finally {
+    if (scope) scope.busy = false;
+  }
+}
+
+/** Share one operation-entry navigation guard through nested display operations. */
+function screenNavigation(context, callback) {
+  const key = navigationKey(context);
+  if (navigation.has(key)) return callback();
+  navigation.set(key, {focus: borkLayoutScreenControl(context, ['-Q', 'number']).split(' ', 1)[0], interrupted: false});
+  try { return callback(); }
+  finally { navigation.delete(key); }
+}
+
+/** Execute a Screen control through one verified attached display's exact tty. */
+function borkLayoutScreenControl(context, args, confirm = true) {
   c.assertType(context, "array", "borkLayoutScreen.context");
   c.assertType(args, "array", "borkLayoutScreen.args");
   c.assertType(confirm, "bool", "borkLayoutScreen.confirm");
@@ -25,10 +77,10 @@ function borkLayoutScreen(context, args, confirm = true) {
       if (!c.is_string(target) || !c.ctype_digit(target)) {
         throw new Error("Screen window removal requires an exact owned window.");
       }
-      borkLayoutScreen(context, args, false);
+      borkLayoutScreenControl(context, args, false);
       deadline = c.clone(c.add(c.microtime(true), 3));
       do {
-        windows = c.clone(borkLayoutScreen(context, ["-Q", "windows", "%n|%f;"], false));
+        windows = c.clone(borkLayoutScreenControl(context, ["-Q", "windows", "%n|%f;"], false));
         if (!c.truth(c.preg_match(c.string(c.string("/(?:^|;)\\s*") + c.string(c.preg_quote(target, "/"))) + c.string("\\|/"), windows))) {
           return "";
         }
@@ -38,12 +90,12 @@ function borkLayoutScreen(context, args, confirm = true) {
     }
     query = c.clone(c.equal(c.get(command, 0) ?? "", "layout") && c.in_array(c.get(command, 1) ?? "", ["number", "show"], true) && c.equal(c.count(command), 2));
     if (c.truth(query)) {
-      borkLayoutScreen(context, ["-X", "echo", nonce], false);
+      borkLayoutScreenControl(context, ["-X", "echo", nonce], false);
       borkLayoutScreenMessage(context, function (message) {
         message = c.clone(message);
         return c.equal(message, nonce);
       });
-      borkLayoutScreen(context, args, false);
+      borkLayoutScreenControl(context, args, false);
       return borkLayoutScreenMessage(context, function (message) {
         message = c.clone(message);
         return !c.equal(message, nonce);
@@ -56,7 +108,7 @@ function borkLayoutScreen(context, args, confirm = true) {
       }
       return c.string(c.string("\"") + c.string(c.strtr(arg, c.entriesArray([["\\", "\\\\"], ["\"", "\\\""], ["$", "\\$"], ["^", "\\^"], ["#", "\\#"], ["\n", "\\n"], ["\r", "\\r"]])))) + c.string("\"");
     }, command));
-    borkLayoutScreen(context, c.array_merge(prefix, ["-X", "eval", c.implode(" ", quoted), c.string("echo ") + c.string(nonce)]), false);
+    borkLayoutScreenControl(context, c.array_merge(prefix, ["-X", "eval", c.implode(" ", quoted), c.string("echo ") + c.string(nonce)]), false);
     try {
       borkLayoutScreenMessage(context, function (message) {
         message = c.clone(message);
@@ -264,8 +316,12 @@ function borkLayoutScreenRect(nodes, id, measured, x, y, panes) {
   }
   return c.entriesArray([["width", width - (c.equal(c.get(node, "type"), "row") ? 1 : 0)], ["height", height - (c.equal(c.get(node, "type"), "column") ? 1 : 0)]]);
 }
-/** Traverse one exact display, restoring its original focus even when a gate fails. */
+/** Traverse one exact display while retaining entry focus unless the user navigates. */
 function borkLayoutScreenSnapshot(context, coordinator) {
+  return screenNavigation(context, () => borkLayoutScreenSnapshotOperation(context, coordinator));
+}
+/** Measure a display while retaining its operation-entry focus. */
+function borkLayoutScreenSnapshotOperation(context, coordinator) {
   c.assertType(context, "array", "borkLayoutScreenSnapshot.context");
   c.assertType(coordinator, "string", "borkLayoutScreenSnapshot.coordinator");
   let dump, flags, focus, found, id, leaf, measured, panes, root, seen, size, topology;
@@ -338,6 +394,10 @@ function borkLayoutScreenFocus(context, id, limit = 100) {
 }
 /** Save separate immutable backup and working layouts before changing regions. */
 function borkLayoutScreenPrepare(record) {
+  return screenNavigation(record.context, () => borkLayoutScreenPrepareOperation(record));
+}
+/** Save immutable backup layouts before creating worker regions. */
+function borkLayoutScreenPrepareOperation(record) {
   c.assertType(record, "array", "borkLayoutScreenPrepare.record");
   let autosave, context, layouts, match, original, saved, tag;
   record = c.clone(record);
@@ -363,7 +423,7 @@ function borkLayoutScreenPrepare(record) {
     saved = c.clone(borkLayoutScreenSnapshot(context, c.get(record, "coordinator")));
     borkLayoutScreen(context, ["-X", "layout", "select", c.get(record, "screen", "backup")]);
     borkLayoutScreen(context, ["-X", "layout", "select", c.get(record, "screen", "working")]);
-    if (!c.equal(c.get(saved, "panes"), c.get(record, "original", "panes")) || !c.equal(c.get(saved, "focus"), c.get(record, "original", "focus"))) {
+    if (!c.equal(c.get(saved, "panes"), c.get(record, "original", "panes"))) {
       borkLayoutScreen(context, ["-X", "layout", "select", c.get(record, "screen", "backup")]);
       throw new Error("Original Screen saved layout differs from live arrangement; original arrangement restored, retain journal for reconciliation.");
     }
@@ -373,6 +433,10 @@ function borkLayoutScreenPrepare(record) {
 }
 /** Create one ordinary shell placeholder in a new region of the same display. */
 function borkLayoutScreenSplit(record, operation) {
+  return screenNavigation(record.context, () => borkLayoutScreenSplitOperation(record, operation));
+}
+/** Split a recorded region and restore its operation-entry focus. */
+function borkLayoutScreenSplitOperation(record, operation) {
   c.assertType(record, "array", "borkLayoutScreenSplit.record");
   c.assertType(operation, "array", "borkLayoutScreenSplit.operation");
   let context, id, oldId, pane, parent, pidfile, shell;
@@ -380,6 +444,7 @@ function borkLayoutScreenSplit(record, operation) {
   operation = c.clone(operation);
   context = c.clone(c.get(record, "context"));
   parent = c.clone(c.get(record, "resources", c.get(operation, "parent"), "id"));
+  const focus = borkLayoutScreen(context, ["-Q", "number"]).split(" ", 1)[0];
   try {
     borkLayoutScreenFocus(context, parent);
     borkLayoutScreen(context, c.array_merge(["-X", "split"], c.equal(c.get(operation, "direction"), "right") ? ["-v"] : []));
@@ -405,15 +470,20 @@ function borkLayoutScreenSplit(record, operation) {
     }
     return id;
   } finally {
-    borkLayoutScreenFocus(context, c.get(record, "original", "focus"));
+    borkLayoutScreenFocus(context, focus);
   }
 }
 /** Reapply planned leaf dimensions after Screen equalizes split siblings. */
 function borkLayoutScreenSize(record) {
+  return screenNavigation(record.context, () => borkLayoutScreenSizeOperation(record));
+}
+/** Resize owned regions while preserving operation-entry focus. */
+function borkLayoutScreenSizeOperation(record) {
   c.assertType(record, "array", "borkLayoutScreenSize.record");
   let context, resource, role, slot;
   record = c.clone(record);
   context = c.clone(c.get(record, "context"));
+  const focus = borkLayoutScreen(context, ["-Q", "number"]).split(" ", 1)[0];
   try {
     for (const [_key, _value] of c.entries(c.get(record, "resources"))) {
       role = _key;
@@ -430,7 +500,7 @@ function borkLayoutScreenSize(record) {
       }
     }
   } finally {
-    borkLayoutScreenFocus(context, c.get(record, "original", "focus"));
+    borkLayoutScreenFocus(context, focus);
   }
 }
 /** Verify that the owned Screen placeholder is still its original idle shell. */
@@ -455,13 +525,19 @@ function borkLayoutScreenIdle(record, resource) {
 }
 /** Restore the saved full layout before removing only this run's shell windows. */
 function borkLayoutScreenCleanup(record, path) {
+  return screenNavigation(record.context, () => borkLayoutScreenCleanupOperation(record, path));
+}
+/** Restore surviving regions and select a deterministic surviving focus. */
+function borkLayoutScreenCleanupOperation(record, path) {
   c.assertType(record, "array", "borkLayoutScreenCleanup.record");
   c.assertType(path, "string", "borkLayoutScreenCleanup.path");
   let context, match, resource, restored, role, snapshot;
   record = c.clone(record);
   path = c.clone(path);
   context = c.clone(c.get(record, "context"));
-  c.set(record, ["pending"], "=", c.entriesArray([["restore_layout", c.get(record, "screen", "backup")]]));
+  const entry = borkLayoutScreen(context, ["-Q", "number"]).split(" ", 1)[0];
+  const focus = record.original.panes[entry] ? entry : record.coordinator;
+  c.set(record, ["pending"], "=", c.entriesArray([["restore_layout", c.get(record, "screen", "backup")], ["focus", focus]]));
   require("../layout.js").borkLayoutWrite(path, record);
   borkLayoutScreen(context, ["-X", "layout", "select", c.get(record, "screen", "backup")]);
   for (const [_key, _value] of c.entries(c.get(record, "resources"))) {
@@ -474,8 +550,9 @@ function borkLayoutScreenCleanup(record, path) {
       }
     }
   }
+  borkLayoutScreenFocus(context, focus);
   snapshot = c.clone(borkLayoutScreenSnapshot(context, c.get(record, "coordinator")));
-  if (!c.equal(c.get(snapshot, "panes"), c.get(record, "original", "panes")) || !c.equal(c.get(snapshot, "focus"), c.get(record, "original", "focus"))) {
+  if (!c.equal(c.get(snapshot, "panes"), c.get(record, "original", "panes")) || !c.equal(c.get(snapshot, "focus"), focus)) {
     throw new Error("Screen saved layout restoration differs from original.");
   }
   /* Selecting the original layout before removing backups preserves its active pointer. */
@@ -483,8 +560,9 @@ function borkLayoutScreenCleanup(record, path) {
     match = _m;
   }))) {
     borkLayoutScreen(context, ["-X", "layout", "select", c.get(match, 1)]);
+    borkLayoutScreenFocus(context, focus);
     restored = c.clone(borkLayoutScreenSnapshot(context, c.get(record, "coordinator")));
-    if (!c.equal(c.get(restored, "panes"), c.get(record, "original", "panes")) || !c.equal(c.get(restored, "focus"), c.get(record, "original", "focus"))) {
+    if (!c.equal(c.get(restored, "panes"), c.get(record, "original", "panes")) || !c.equal(c.get(restored, "focus"), focus)) {
       borkLayoutScreen(context, ["-X", "layout", "select", c.get(record, "screen", "backup")]);
       throw new Error("Original saved layout differs from initial live arrangement; backup restored and retained for explicit reconciliation.");
     }

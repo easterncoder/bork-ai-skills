@@ -40,8 +40,11 @@ function main() {
             cmd('-X', 'layout', 'number'); const layoutBefore = 'This is layout 1 (working).';
             const result = layout('create'); assert.equal(result.state, 'ready');
             assert.equal(layout('inspect').snapshot.focus, '0');
+            control('focus', 'bottom');
+            const userFocus = cmd('-Q', 'number').split(' ', 1)[0];
             layout('claim', {role: 'review', slot: 1, task_id: 'fixture', target_id: 'i10'});
             const role = root.join('role.json'); role.writeText(json({status: 'complete'}));
+            assert.equal(layout('inspect').snapshot.focus, userFocus);
             layout('release', {placement: 'review:1', task_id: 'fixture', result_path: String(role), results_verified: true, descendants_stopped: true, worker_stopped: true});
             if (concurrency === 1) {
                 const job = root.join('job.json'), exit = root.join('exit.json'), input = root.join('launch.json');
@@ -55,7 +58,9 @@ function main() {
                 layout('release', {placement: 'master:1', task_id: 'master-launch', result_path: String(role), results_verified: true, descendants_stopped: true, worker_stopped: true});
                 console.log('SCREEN_LAUNCH_PASS');
             }
+            control('focus', 'bottom');
             layout('cleanup', {results_verified: true, descendants_stopped: true});
+            assert.equal(layout('inspect').snapshot.focus, userFocus);
             const check = root.join('check.json'); check.writeText(json(JSON.parse(P(request.record).readText()).context));
             const code = 'const a=require(require("node:path").join(require("node:path").dirname(process.argv[1]),"layout-adapters/screen.js"));process.stdout.write(a.borkLayoutScreen(JSON.parse(require("node:fs").readFileSync(process.argv[2],"utf8")),["-X","layout","number"]));';
             const actual = run([process.execPath, '-e', code, SCRIPTS.join('layout.js'), check], {env, timeout: 15});

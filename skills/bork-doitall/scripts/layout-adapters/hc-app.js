@@ -209,19 +209,14 @@ function borkLayoutAppCapabilities(context = []) {
       }
     }
   }
-  return c.entriesArray([["supported", true], ["commands_sha256", c.hash("sha256", c.json_encode(commands, c.JSON_THROW_ON_ERROR))], ["focus", "Splits focus transiently; the saved pane is restored and checked on success and error."]]);
+  return c.entriesArray([["supported", true], ["commands_sha256", c.hash("sha256", c.json_encode(commands, c.JSON_THROW_ON_ERROR))], ["focus", "Splits focus transiently; operation-entry focus is restored unless navigation has superseded it."]]);
 }
-/** Restore and verify the original app focus after public background controls. */
-function borkLayoutAppRestoreFocus(record) {
-  c.assertType(record, "array", "borkLayoutAppRestoreFocus.record");
-  let context, status;
-  record = c.clone(record);
-  context = c.clone(c.get(record, "context"));
-  borkLayoutAppCommand(context, "pane.focus", c.entriesArray([["pane", c.get(record, "original", "focus")]]));
-  status = c.clone(borkLayoutAppCommand(context, "status"));
-  if (!c.equal(c.get(status, "focused_pane") ?? null, c.get(record, "original", "focus"))) {
-    throw new Error("Original app focus could not be restored; preserve pending intent.");
-  }
+/** Restore operation-entry focus only while the operation still owns current focus. */
+function borkLayoutAppRestoreFocus(record, focus, expected) {
+  const context = record.context;
+  const current = borkLayoutAppCommand(context, 'status').focused_pane;
+  if (current === focus || current !== expected) return;
+  borkLayoutAppCommand(context, 'pane.focus', {pane: focus});
 }
 /** Split an owned subtree and proportionally preserve its original sibling share. */
 function borkLayoutAppSplit(record, operation) {
@@ -252,7 +247,7 @@ function borkLayoutAppSplit(record, operation) {
     });
     return id;
   } finally {
-    borkLayoutAppRestoreFocus(record);
+    borkLayoutAppRestoreFocus(record, c.get(snapshot, "focus"), id);
   }
 }
 /** Wait boundedly for asynchronous public document persistence, never replaying a mutation. */
@@ -313,6 +308,12 @@ function borkLayoutAppStable(record, expected = false, refresh = null) {
   } while (c.microtime(true) < deadline);
   throw new Error("App rendered geometry did not settle; retain layout for reconciliation.");
 }
+/** Preserve fresh entry focus for each idempotent terminal-view update. */
+function borkLayoutAppShow(record, args) {
+  const focus = borkLayoutAppCommand(record.context, 'status').focused_pane;
+  try { borkLayoutAppCommand(record.context, 'terminal.show', args); }
+  finally { borkLayoutAppRestoreFocus(record, focus, args.pane); }
+}
 /** Bind a claimed visible placement to its exact owned hc terminal or restore its shell. */
 function borkLayoutAppBind(input, record) {
   c.assertType(input, "array", "borkLayoutAppBind.input");
@@ -337,22 +338,14 @@ function borkLayoutAppBind(input, record) {
     }
     c.set(args, ["terminal"], "=", c.get(input, "terminal_id"));
   }
-  try {
-    borkLayoutAppCommand(c.get(record, "context"), "terminal.show", args);
-  } finally {
-    borkLayoutAppRestoreFocus(record);
-  }
+  borkLayoutAppShow(record, args);
   c.set(record, ["resources", key, "visible_terminal"], "DELETE", null);
   if (c.get(args, "terminal") != null) {
     c.set(record, ["resources", key, "visible_terminal"], "=", c.get(args, "terminal"));
   }
   /* Reapply only the idempotent view binding while App incorporates the new core terminal. */
   borkLayoutAppStable(record, true, function () {
-    try {
-      borkLayoutAppCommand(c.get(record, "context"), "terminal.show", args);
-    } finally {
-      borkLayoutAppRestoreFocus(record);
-    }
+    borkLayoutAppShow(record, args);
   });
   require("../layout.js").borkLayoutVerify(record);
   require("../layout.js").borkLayoutWrite(require("../terminal.js").field(input, "record"), record);
