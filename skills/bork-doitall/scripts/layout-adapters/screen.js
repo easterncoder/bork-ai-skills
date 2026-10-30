@@ -11,7 +11,7 @@ function borkLayoutScreen(context, args, confirm = true) {
   c.assertType(context, "array", "borkLayoutScreen.context");
   c.assertType(args, "array", "borkLayoutScreen.args");
   c.assertType(confirm, "bool", "borkLayoutScreen.confirm");
-  let code, command, deadline, environment, error, errors, match, mutation, nonce, output, pipes, prefix, process, query, quoted, session, target, tty, windows;
+  let code, command, deadline, environment, error, errors, mutation, nonce, output, pipes, prefix, process, query, quoted, session, target, tty, windows;
   context = c.clone(context);
   args = c.clone(args);
   confirm = c.clone(confirm);
@@ -68,11 +68,7 @@ function borkLayoutScreen(context, args, confirm = true) {
     return "";
   }
   session = c.clone(require("../terminal.js").field(context, "session"));
-  if (!c.truth(c.preg_match("/^([1-9][0-9]*)\\.[a-zA-Z0-9_-]+$/D", session, _m => {
-    match = _m;
-  }))) {
-    throw new Error("Screen needs an exact local server PID.session identity.");
-  }
+  require("../screen-context.js").screenSessionPid(session);
   tty = c.clone(c.get(context, "display_tty") ?? c.get(context, "window_tty") ?? null);
   if (!c.is_string(tty) || !c.truth(c.preg_match("#^/dev/(pts/[0-9]+|tty[a-zA-Z0-9]+)$#D", tty)) || !c.is_readable(tty)) {
     throw new Error("Screen requires a verified readable display or origin window tty.");
@@ -121,19 +117,14 @@ function screenStdinTty() {
 function borkLayoutScreenContext(context, coordinator) {
   c.assertType(context, "array", "borkLayoutScreenContext.context");
   c.assertType(coordinator, "string", "borkLayoutScreenContext.coordinator");
-  let candidate, candidates, fd, flags, found, identity, match, matches, nonce, number, pid, probe, session, stat, target;
+  let candidate, candidates, fd, flags, found, identity, matches, nonce, number, pid, probe, session, stat, target;
   context = c.clone(context);
   coordinator = c.clone(coordinator);
   if (!c.ctype_digit(coordinator)) {
     throw new Error("Screen coordinator must be a measured window number.");
   }
   session = c.clone(require("../terminal.js").field(context, "session"));
-  if (!c.truth(c.preg_match("/^([1-9][0-9]*)\\.[a-zA-Z0-9_-]+$/D", session, _m => {
-    match = _m;
-  }))) {
-    throw new Error("Screen session identity must include its local server PID.");
-  }
-  pid = c.clone(c.get(match, 1));
+  pid = require("../screen-context.js").screenSessionPid(session);
   stat = c.clone(c.file_get_contents(c.string(c.string("/proc/") + c.string(pid)) + c.string("/stat")));
   if (c.equal(stat, false)) {
     throw new Error("Screen display discovery requires Linux procfs or a supported verified endpoint.");

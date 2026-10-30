@@ -96,6 +96,17 @@ class ScreenTests extends Fixture {
     }
     this.fail("Exit record was not published");
   }
+  test_session_identity_validation() {
+    /* Accept dotted default identities while rejecting ambiguous or malformed selectors. */
+    const {screenSessionPid} = require('../screen-context.js');
+    const assert = require('node:assert/strict');
+    for (const session of ['123.fixture', '884160.pts-0.wolfman']) {
+      this.assertEqual(screenSessionPid(session), session.split('.')[0]);
+    }
+    for (const session of ['fixture', '0.fixture', '123.', '123.bad/name', '123.bad name', '123.fixture\n', '123.fixture\0', '-S', null]) {
+      assert.throws(() => screenSessionPid(session), /Screen session identity/);
+    }
+  }
   test_selection_priority_capacity_and_legacy_records() {
     /* Screen follows active tmux and blocks capacity failure without fallback. */
     var runner = "\nconst {selectEnvironment,validateEnvironmentSelection}=require(process.argv[1]);\nconst x=JSON.parse(require('node:fs').readFileSync(0,'utf8'));\ntry {const selection=selectEnvironment(x.contexts,x.capabilities);validateEnvironmentSelection({execution_driver:selection.execution_driver,environment_selection:selection});console.log(require(require(\"node:path\").resolve(require(\"node:path\").dirname(process.argv[1]), \"../../bork-review/scripts/support.js\")).json_encode({ok:true,driver:selection.execution_driver}));}\ncatch(error){console.log(require(require(\"node:path\").resolve(require(\"node:path\").dirname(process.argv[1]), \"../../bork-review/scripts/support.js\")).json_encode({ok:false,error:error.message}));}\n\n";
@@ -170,26 +181,27 @@ const fs=require("node:fs");const file=process.env.SCREEN_CALLS;const count=fs.e
     }
   }
   test_context_discovers_inherited_tty_without_environment() {
-    /* An attached private Screen window supplies its tty without TTY. */
+    /* A dotted Screen identity supports display discovery and lifecycle queries without TTY. */
     const resultFile = this.root.join('tty-context.json');
-    const code = `const fs=require('node:fs');const screen=require(process.argv[1]);let result;try{result=screen.borkLayoutScreenContext({session:process.env.STY,socket_dir:process.env.SCREENDIR},process.env.WINDOW)}catch(error){result={error:error.message}}fs.writeFileSync(process.argv[2],JSON.stringify(result));`;
+    const code = `const fs=require('node:fs');const screen=require(process.argv[1]);let result;try{result=screen.borkLayoutScreenContext({session:process.env.STY,socket_dir:process.env.SCREENDIR},process.env.WINDOW);result.query=require(process.argv[3]).screenCommand({session:process.env.STY,pane:process.env.WINDOW,socket_dir:process.env.SCREENDIR},['-Q','number'])}catch(error){result={error:error.message}}fs.writeFileSync(process.argv[2],JSON.stringify(result));`;
     const env = {
       ...this.env,
       TERM: 'xterm-256color'
     };
     delete env.TTY;
-    const pty = privatePty(['screen', '-m', '-S', 'ttycontext', process.execPath, '-e', code, String(SCRIPTS.join('layout-adapters/screen.js')), String(resultFile)], {
+    const pty = privatePty(['screen', '-m', '-S', 'pts-0.ttycontext', process.execPath, '-e', code, String(SCRIPTS.join('layout-adapters/screen.js')), String(resultFile), String(SCRIPTS.join('screen.js'))], {
       env
     });
     try {
       for (let attempt = 0; attempt < 200 && !resultFile.exists(); attempt++) sleep(.1);
       this.assertTrue(resultFile.exists(), 'Private Screen context probe did not finish');
       const context = JSON.parse(resultFile.readText());
-      this.assertNotIn('error', context);
+      this.assertNotIn('error', context, json(context));
+      this.assertTrue(context.query.startsWith('0 ('));
       this.assertTrue(context.window_tty.startsWith('/dev/pts/'));
       this.assertTrue(context.display_tty.startsWith('/dev/pts/'));
     } finally {
-      run(['screen', '-S', 'ttycontext', '-X', 'quit'], {
+      run(['screen', '-S', 'pts-0.ttycontext', '-X', 'quit'], {
         env,
         timeout: 5
       });

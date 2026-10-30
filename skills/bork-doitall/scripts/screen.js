@@ -35,7 +35,8 @@ function screenCommand(data, args) {
   args = c.clone(args);
   session = c.clone(require("./terminal.js").field(data, "session"));
   window = c.clone(require("./terminal.js").field(data, "pane"));
-  if (!c.truth(c.preg_match("/^[1-9][0-9]*\\.[a-zA-Z0-9_-]+$/D", session)) || !c.ctype_digit(window)) {
+  require("./screen-context.js").screenSessionPid(session);
+  if (!c.ctype_digit(window)) {
     throw new Error("Invalid recorded Screen identity.");
   }
   return screenExecute(data, c.array_merge(["screen", "-S", session, "-p", window], args));
