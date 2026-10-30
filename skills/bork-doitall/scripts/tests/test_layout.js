@@ -224,6 +224,32 @@ class LayoutTests extends Fixture {
     const result = run([process.execPath, '-e', script, String(HELPER)], {capture_output: true, text: true});
     this.assertEqual(result.status, 0, result.stderr);
   }
+  test_screen_size_stops_when_navigation_occurs_during_resize() {
+    /* Exercise the size operation with navigation during the transport call. */
+    const script = `
+      const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+      const file=path.join(path.dirname(process.argv[1]),'layout-adapters/screen.js');
+      const sandbox={require:require('node:module').createRequire(file),module:{exports:{}},process};
+      vm.runInNewContext(fs.readFileSync(file,'utf8') + \`
+        let focused='entry', controls=[], injected=false;
+        const regions=['review','user','entry'];
+        borkLayoutScreenControl=function(context,args){
+          if(args[0]==='-Q' && args[1]==='number') return focused+' title';
+          controls.push(args);
+          if(args[1]==='focus') focused=args[2]==='top' ? regions[0] : regions[(regions.indexOf(focused)+1)%regions.length];
+          if(args[1]==='resize' && args[2]==='-h') { focused='user'; injected=true; }
+          return '';
+        };
+        let blocked=false;
+        try {
+          borkLayoutScreenSize({context:{session:'fixture'},resources:{'review:1':{id:'review'}},plan:{slots:{'review:1':{width:40,height:10}}}});
+        } catch(error) { blocked=error.message.includes('User navigated'); }
+        if(!injected || !blocked || focused!=='user' || controls.some(args=>args[1]==='resize' && args[2]==='-v') || navigation.size!==0) throw Error('Resize navigation guard failed');
+      \`,sandbox);
+    `;
+    const result = run([process.execPath, '-e', script, String(HELPER)], {capture_output: true, text: true});
+    this.assertEqual(result.status, 0, result.stderr);
+  }
   test_app_restore_uses_entry_focus_and_respects_navigation() {
     /* A public-control fixture restores only focus caused by the current operation. */
     const app = P(this.root).join('herdr-app');

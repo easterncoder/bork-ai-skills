@@ -13,6 +13,14 @@ function navigationKey(context) {
   return context.session;
 }
 
+/** Identify controls that can change the displayed window. */
+function screenControlChangesFocus(args) {
+  const index = args.indexOf('-X');
+  const command = args[index + 1];
+  return index !== -1 && (['focus', 'screen', 'kill'].includes(command) ||
+    (command === 'layout' && args[index + 2] === 'select'));
+}
+
 /** Guard temporary traversal against observed user navigation without replaying controls. */
 function borkLayoutScreen(context, args, confirm = true) {
   const scope = navigation.get(navigationKey(context));
@@ -27,7 +35,14 @@ function borkLayoutScreen(context, args, confirm = true) {
   if (scope) scope.busy = true;
   try {
     const result = borkLayoutScreenControl(context, args, confirm);
-    if (scope) scope.focus = borkLayoutScreenControl(context, ['-Q', 'number']).split(' ', 1)[0];
+    if (scope) {
+      const current = borkLayoutScreenControl(context, ['-Q', 'number']).split(' ', 1)[0];
+      if (!screenControlChangesFocus(args) && current !== scope.focus) {
+        scope.interrupted = true;
+        throw new Error('User navigated during temporary Screen traversal; retain intent and reconcile without restoring stale focus.');
+      }
+      scope.focus = current;
+    }
     return result;
   } finally {
     if (scope) scope.busy = false;
