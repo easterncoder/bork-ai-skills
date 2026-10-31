@@ -18,6 +18,28 @@ function requiredText(data, key) {
   }
   return c.get(data, key);
 }
+/** Validate launch inputs for every target before publishing a new batch. */
+function validateEntryTargets(plan) {
+  const requirements = {
+    prify: ["issue_url", "implementation_repository"],
+    draft_goodcode: ["pr_url"],
+    draft: ["pr_url"],
+    ready: ["pr_url"],
+    finalize_merge: ["pr_url", "published_head"]
+  };
+  for (const [id, target] of c.entries(c.get(plan, "targets"))) {
+    const phase = c.get(target, "entry_phase");
+    if (typeof phase !== "string" || !Object.hasOwn(requirements, phase)) {
+      throw new Error("Target " + id + ": missing or unsupported entry_phase: " + String(phase));
+    }
+    for (const field of requirements[phase]) {
+      const value = c.get(target, field);
+      if (typeof value !== "string" || value.trim() === "") {
+        throw new Error("Target " + id + " entry_phase " + phase + ": missing nonempty string " + field);
+      }
+    }
+  }
+}
 /** Read current or legacy selected-reviewer gate evidence. */
 function reviewerGateRecord(target) {
   c.assertType(target, "array", "reviewerGateRecord.target");
@@ -299,6 +321,7 @@ function changePlan(plan, input) {
       throw new Error("Effort override must be low, standard or high.");
     }
     approved(newValue);
+    validateEntryTargets(newValue);
     require("./scheduler.js").schedule(newValue);
     c.set(newValue, ["state_revision"], "=", 0);
     return [newValue, c.entriesArray([["event", "initialized"]])];

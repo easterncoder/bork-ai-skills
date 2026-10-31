@@ -81,10 +81,55 @@ class BatchTests extends Fixture {
       targets: {
         "12": {
           status: "queued",
-          depends_on: []
+          depends_on: [],
+          entry_phase: "prify",
+          issue_url: "https://github.com/example/project/issues/12",
+          implementation_repository: "example/project"
         }
       }
     };
+  }
+  test_init_requires_entry_phase_fields() {
+    /* Reject incomplete phase inputs before a plan or master can be created. */
+    const requirements = {
+      prify: ["issue_url", "implementation_repository"],
+      draft_goodcode: ["pr_url"],
+      draft: ["pr_url"],
+      ready: ["pr_url"],
+      finalize_merge: ["pr_url", "published_head"]
+    };
+    for (const [phase, fields] of Object.entries(requirements)) {
+      for (const field of fields) {
+        for (const invalid of [undefined, null, "", "   ", 12, false, []]) {
+          const plan = this.approved_plan();
+          Object.assign(plan.targets["12"], {entry_phase: phase, pr_url: PR, published_head: HEAD});
+          if (invalid === undefined) delete plan.targets["12"][field];
+          else plan.targets["12"][field] = invalid;
+          const result = this.call("init", {plan: plan});
+          this.assertFalse(result.ok, phase + ": " + field);
+          this.assertTrue(result.error.includes(field), result.error);
+          this.assertTrue(result.error.includes(phase), result.error);
+          this.assertFalse(this.plan.exists());
+        }
+      }
+      const plan = this.approved_plan();
+      Object.assign(plan.targets["12"], {entry_phase: phase, pr_url: PR});
+      if (phase === "finalize_merge") plan.targets["12"].published_head = HEAD;
+      this.assertTrue(this.call("init", {plan: plan}).ok, phase);
+      this.plan.unlink();
+    }
+  }
+  test_init_rejects_unknown_or_missing_entry_phase() {
+    /* Require an explicit supported phase instead of guessing a launch contract. */
+    for (const phase of [undefined, null, "", "   ", "unknown", 12]) {
+      const plan = this.approved_plan();
+      if (phase === undefined) delete plan.targets["12"].entry_phase;
+      else plan.targets["12"].entry_phase = phase;
+      const result = this.call("init", {plan: plan});
+      this.assertFalse(result.ok);
+      this.assertTrue(result.error.includes("entry_phase"), result.error);
+      this.assertFalse(this.plan.exists());
+    }
   }
   start({
     merge = false,
