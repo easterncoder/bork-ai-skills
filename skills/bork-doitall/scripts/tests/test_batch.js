@@ -1058,8 +1058,9 @@ class BatchTests extends Fixture {
   }
   test_ready_entry_resume_before_and_after_gate() {
     /* Resume with verified ready evidence while preserving any seeded head. */
-    for (var seeded of [false, true]) {
-      this.start_ready();
+    for (var stage of ["unseeded", "stale", "seeded"]) {
+      var seeded = stage === "seeded";
+      this.start_ready({fields: stage === "stale" ? {published_head: "b".repeat(40)} : {}});
       var remote = {pr_url: PR, head: HEAD, state: "OPEN", is_draft: false};
       if (seeded) {
         var gate = this.write("review.json", {
@@ -1101,7 +1102,7 @@ class BatchTests extends Fixture {
       }).ok);
       var target = JSON.parse(this.plan.readText()).targets["12"];
       this.assertEqual(target.status, "running");
-      this.assertEqual(target.published_head ?? null, seeded ? HEAD : null);
+      this.assertEqual(target.published_head ?? null, seeded ? HEAD : stage === "stale" ? "b".repeat(40) : null);
       this.plan.unlink();
       this.revision = 0;
     }

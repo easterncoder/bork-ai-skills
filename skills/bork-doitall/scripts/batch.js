@@ -256,8 +256,8 @@ function resumeTarget(plan, input) {
   }
   if (!c.equal(pr, null)) {
     const readyEntry = c.equal(c.get(target, "entry_phase") ?? null, "ready");
-    if (readyEntry && c.equal(head, null) && c.equal(c.count(c.get(target, "phase_records") ?? []), 0) && c.equal(c.count(c.get(target, "mutations") ?? []), 0)) {
-      head = requiredText(c.get(input, "remote") ?? [], "head");
+    if (readyEntry && c.equal(c.count(c.get(target, "phase_records") ?? []), 0) && c.equal(c.count(c.get(target, "mutations") ?? []), 0)) {
+      head = completionHead(input, target);
     }
     observedHead(input, pr, head);
     if (!c.equal(c.get(input, "remote", "state") ?? null, "OPEN") || !c.equal(c.get(input, "remote", "is_draft") ?? null, !readyEntry) || !c.equal(c.get(evidence, "remote") ?? null, c.get(input, "remote"))) {
