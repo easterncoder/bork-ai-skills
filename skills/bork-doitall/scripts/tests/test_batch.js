@@ -1048,6 +1048,160 @@ class BatchTests extends Fixture {
       "plan": plan
     }).ok);
   }
+  start_ready({no_reviewer = false, fields = {}} = {}) {
+    /* Start a ready-entry target without adopting an implementation phase. */
+    var plan = this.approved_plan({no_reviewer: no_reviewer});
+    Object.assign(plan.targets["12"], {entry_phase: "ready", pr_url: PR}, fields);
+    this.assertTrue(this.call("init", {plan: plan}).ok);
+    this.assertEqual(this.call("reserve").result.launch, ["12"]);
+    this.assertTrue(this.call("started", {target_id: "12", agent_id: "master-1"}).ok);
+  }
+  test_ready_entry_resume_before_and_after_gate() {
+    /* Resume with verified ready evidence while preserving any seeded head. */
+    for (var stage of ["unseeded", "stale", "seeded"]) {
+      var seeded = stage === "seeded";
+      this.start_ready({fields: stage === "stale" ? {published_head: "b".repeat(40)} : {}});
+      var remote = {pr_url: PR, head: HEAD, state: "OPEN", is_draft: false};
+      if (seeded) {
+        var gate = this.write("review.json", {
+          status: "complete", pr_url: PR, head: HEAD, reviewer: "custom-reviewer"
+        });
+        this.assertTrue(this.call("gate-complete", {target_id: "12", evidence_path: gate, remote: remote}).ok);
+      }
+      var blocker = this.write("blocker.json", {reason: "review stalled"});
+      this.assertTrue(this.call("target-blocked", {
+        target_id: "12", master_stopped: true, descendants_stopped: true,
+        reason: "review_stalled", evidence_path: blocker
+      }).ok);
+      var plan = JSON.parse(this.plan.readText());
+      var evidence = {
+        batch_id: plan.batch_id, target_id: "12",
+        approved_preview_sha256: sha256(Buffer.from(String(plan.approved_preview))),
+        prior_master_agent_id: "master-1", recovered_master_agent_id: "master-2",
+        user_instruction: "continue", user_continuation: true, scope_unchanged: true,
+        prior_master_stopped: true, children_reconciled: true, remote: remote
+      };
+      var path = this.write("resume-ready.json", evidence);
+      for (var invalid of [
+        {pr_url: PR + "0"}, {head: ""}, {state: "CLOSED"}, {is_draft: true},
+        ...(seeded ? [{head: "b".repeat(40)}] : [])
+      ]) {
+        var bad = {...remote, ...invalid};
+        this.write("resume-ready.json", {...evidence, remote: bad});
+        this.assertFalse(this.call("target-resume", {
+          target_id: "12", agent_id: "master-2", evidence_path: path, remote: bad
+        }).ok);
+      }
+      this.write("resume-ready.json", evidence);
+      this.assertFalse(this.call("target-resume", {
+        target_id: "12", agent_id: "master-2", evidence_path: path,
+        remote: {...remote, head: "b".repeat(40)}
+      }).ok);
+      this.assertTrue(this.call("target-resume", {
+        target_id: "12", agent_id: "master-2", evidence_path: path, remote: remote
+      }).ok);
+      var target = JSON.parse(this.plan.readText()).targets["12"];
+      this.assertEqual(target.status, "running");
+      this.assertEqual(target.published_head ?? null, seeded ? HEAD : stage === "stale" ? "b".repeat(40) : null);
+      this.plan.unlink();
+      this.revision = 0;
+    }
+  }
+  test_ready_entry_gate_and_completion() {
+    /* Seed the live head at the gate and complete the normal ready workflow. */
+    this.start_ready();
+    var evidence = this.write("review.json", {
+      status: "complete", pr_url: PR, head: HEAD, reviewer: "custom-reviewer"
+    });
+    var remote = {pr_url: PR, head: HEAD, state: "OPEN", is_draft: false};
+    this.assertTrue(this.call("gate-complete", {
+      target_id: "12", evidence_path: evidence, remote: remote
+    }).ok);
+    this.assertEqual(JSON.parse(this.plan.readText()).targets["12"].published_head, HEAD);
+    this.child("ready_goodcode");
+    this.assertTrue(this.adopt("ready_goodcode").ok);
+    var result = this.write("target.json", {
+      status: "complete", pr_url: PR, published_head: HEAD, cleanup_success: true
+    });
+    this.assertTrue(this.call("target-complete", {
+      target_id: "12", result_path: result, master_stopped: true,
+      descendants_stopped: true, remote: remote
+    }).ok);
+  }
+  test_ready_entry_gate_rejects_invalid_remote_and_evidence() {
+    /* Invalid observations cannot seed a head or leave a completed gate. */
+    this.start_ready();
+    var evidence = this.write("review.json", {
+      status: "complete", pr_url: PR, head: HEAD, reviewer: "custom-reviewer"
+    });
+    var remote = {pr_url: PR, head: HEAD, state: "OPEN", is_draft: false};
+    for (var invalid of [
+      {head: "b".repeat(40)}, {head: ""}, {head: null},
+      {pr_url: PR + "0"}, {state: "CLOSED"}, {state: null},
+      {is_draft: true}, {is_draft: null}
+    ]) {
+      this.assertFalse(this.call("gate-complete", {
+        target_id: "12", evidence_path: evidence, remote: {...remote, ...invalid}
+      }).ok);
+      var target = JSON.parse(this.plan.readText()).targets["12"];
+      this.assertFalse(Object.hasOwn(target, "published_head"));
+      this.assertFalse(Object.hasOwn(target.phase_records ?? {}, "reviewer_gate"));
+    }
+    this.write("review.json", {
+      status: "complete", pr_url: PR, head: HEAD, reviewer: "other-user"
+    });
+    this.assertFalse(this.call("gate-complete", {
+      target_id: "12", evidence_path: evidence, remote: remote
+    }).ok);
+  }
+  test_ready_entry_without_reviewer_seeds_head_at_completion() {
+    /* A skipped gate still records a verified ready head at completion. */
+    this.start_ready({no_reviewer: true});
+    var result = this.write("target.json", {
+      status: "complete", pr_url: PR, published_head: HEAD,
+      cleanup_success: true, ready_goodcode_status: "skipped_noreviewer"
+    });
+    var fields = {
+      target_id: "12", result_path: result, master_stopped: true,
+      descendants_stopped: true
+    };
+    var remote = {pr_url: PR, head: HEAD, state: "OPEN", is_draft: false};
+    for (var invalid of [{head: "b".repeat(40)}, {pr_url: PR + "0"}, {state: "CLOSED"}, {state: null}, {head: ""}, {is_draft: true}]) {
+      this.assertFalse(this.call("target-complete", {
+        ...fields, remote: {...remote, ...invalid}
+      }).ok);
+      this.assertFalse(Object.hasOwn(JSON.parse(this.plan.readText()).targets["12"], "published_head"));
+    }
+    this.assertTrue(this.call("target-complete", {...fields, remote: remote}).ok);
+    this.assertEqual(JSON.parse(this.plan.readText()).targets["12"].published_head, HEAD);
+  }
+  test_ready_entry_gate_refreshes_initial_head() {
+    /* Approval-time heads are refreshed before any phase has completed. */
+    this.start_ready({fields: {published_head: "b".repeat(40)}});
+    var evidence = this.write("review.json", {
+      status: "complete", pr_url: PR, head: HEAD, reviewer: "custom-reviewer"
+    });
+    this.assertTrue(this.call("gate-complete", {
+      target_id: "12", evidence_path: evidence,
+      remote: {pr_url: PR, head: HEAD, state: "OPEN", is_draft: false}
+    }).ok);
+    this.assertEqual(JSON.parse(this.plan.readText()).targets["12"].published_head, HEAD);
+  }
+  test_ready_entry_gate_preserves_phase_head() {
+    /* Adopted phase heads cannot be refreshed by the ready-entry exception. */
+    this.start_ready();
+    this.child("prify");
+    this.assertTrue(this.adopt("prify").ok);
+    var changed = "b".repeat(40);
+    var evidence = this.write("review.json", {
+      status: "complete", pr_url: PR, head: changed, reviewer: "custom-reviewer"
+    });
+    this.assertFalse(this.call("gate-complete", {
+      target_id: "12", evidence_path: evidence,
+      remote: {pr_url: PR, head: changed, state: "OPEN", is_draft: false}
+    }).ok);
+    this.assertEqual(JSON.parse(this.plan.readText()).targets["12"].published_head, HEAD);
+  }
   test_ready_pr_gate_rejects_wrong_reviewer() {
     /* An initially ready PR needs evidence from its selected reviewer. */
     this.start();
