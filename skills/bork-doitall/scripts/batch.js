@@ -255,9 +255,13 @@ function resumeTarget(plan, input) {
     head = c.clone(c.get(prior, "published_head") ?? null);
   }
   if (!c.equal(pr, null)) {
+    const readyEntry = c.equal(c.get(target, "entry_phase") ?? null, "ready");
+    if (readyEntry && c.equal(head, null) && c.equal(c.count(c.get(target, "phase_records") ?? []), 0) && c.equal(c.count(c.get(target, "mutations") ?? []), 0)) {
+      head = requiredText(c.get(input, "remote") ?? [], "head");
+    }
     observedHead(input, pr, head);
-    if (!c.equal(c.get(input, "remote", "state") ?? null, "OPEN") || !c.equal(c.get(input, "remote", "is_draft") ?? null, true) || !c.equal(c.get(evidence, "remote") ?? null, c.get(input, "remote"))) {
-      throw new Error("Resume requires matching fresh open-draft PR evidence.");
+    if (!c.equal(c.get(input, "remote", "state") ?? null, "OPEN") || !c.equal(c.get(input, "remote", "is_draft") ?? null, !readyEntry) || !c.equal(c.get(evidence, "remote") ?? null, c.get(input, "remote"))) {
+      throw new Error("Resume requires matching fresh open PR evidence in the expected draft state.");
     }
   }
   c.append(target, ["resume_history"], c.entriesArray([["blocker", c.get(target, "blocker") ?? null], ["prior_master_agent_id", c.get(target, "master_agent_id") ?? null], ["master_agent_id", agent], ["evidence_path", evidencePath], ["evidence_sha256", c.hash_file("sha256", evidencePath)], ["resumed_at", c.gmdate("c")]]));

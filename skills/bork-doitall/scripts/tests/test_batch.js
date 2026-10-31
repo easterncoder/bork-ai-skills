@@ -1056,6 +1056,56 @@ class BatchTests extends Fixture {
     this.assertEqual(this.call("reserve").result.launch, ["12"]);
     this.assertTrue(this.call("started", {target_id: "12", agent_id: "master-1"}).ok);
   }
+  test_ready_entry_resume_before_and_after_gate() {
+    /* Resume with verified ready evidence while preserving any seeded head. */
+    for (var seeded of [false, true]) {
+      this.start_ready();
+      var remote = {pr_url: PR, head: HEAD, state: "OPEN", is_draft: false};
+      if (seeded) {
+        var gate = this.write("review.json", {
+          status: "complete", pr_url: PR, head: HEAD, reviewer: "custom-reviewer"
+        });
+        this.assertTrue(this.call("gate-complete", {target_id: "12", evidence_path: gate, remote: remote}).ok);
+      }
+      var blocker = this.write("blocker.json", {reason: "review stalled"});
+      this.assertTrue(this.call("target-blocked", {
+        target_id: "12", master_stopped: true, descendants_stopped: true,
+        reason: "review_stalled", evidence_path: blocker
+      }).ok);
+      var plan = JSON.parse(this.plan.readText());
+      var evidence = {
+        batch_id: plan.batch_id, target_id: "12",
+        approved_preview_sha256: sha256(Buffer.from(String(plan.approved_preview))),
+        prior_master_agent_id: "master-1", recovered_master_agent_id: "master-2",
+        user_instruction: "continue", user_continuation: true, scope_unchanged: true,
+        prior_master_stopped: true, children_reconciled: true, remote: remote
+      };
+      var path = this.write("resume-ready.json", evidence);
+      for (var invalid of [
+        {pr_url: PR + "0"}, {head: ""}, {state: "CLOSED"}, {is_draft: true},
+        ...(seeded ? [{head: "b".repeat(40)}] : [])
+      ]) {
+        var bad = {...remote, ...invalid};
+        this.write("resume-ready.json", {...evidence, remote: bad});
+        this.assertFalse(this.call("target-resume", {
+          target_id: "12", agent_id: "master-2", evidence_path: path, remote: bad
+        }).ok);
+      }
+      this.write("resume-ready.json", evidence);
+      this.assertFalse(this.call("target-resume", {
+        target_id: "12", agent_id: "master-2", evidence_path: path,
+        remote: {...remote, head: "b".repeat(40)}
+      }).ok);
+      this.assertTrue(this.call("target-resume", {
+        target_id: "12", agent_id: "master-2", evidence_path: path, remote: remote
+      }).ok);
+      var target = JSON.parse(this.plan.readText()).targets["12"];
+      this.assertEqual(target.status, "running");
+      this.assertEqual(target.published_head ?? null, seeded ? HEAD : null);
+      this.plan.unlink();
+      this.revision = 0;
+    }
+  }
   test_ready_entry_gate_and_completion() {
     /* Seed the live head at the gate and complete the normal ready workflow. */
     this.start_ready();
