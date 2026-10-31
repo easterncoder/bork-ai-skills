@@ -118,6 +118,19 @@ function observedHead(input, pr, head) {
     throw new Error("Remote PR or head does not match recorded intent.");
   }
 }
+/** Resolve a fresh ready-entry head or retain the published phase head. */
+function completionHead(input, target) {
+  c.assertType(input, "array", "completionHead.input");
+  c.assertType(target, "array", "completionHead.target");
+  if (c.equal(c.get(target, "entry_phase") ?? null, "ready") && c.equal(c.count(c.get(target, "phase_records") ?? []), 0) && c.equal(c.count(c.get(target, "mutations") ?? []), 0)) {
+    const remote = c.get(input, "remote") ?? null;
+    if (!c.is_array(remote) || !c.equal(c.get(remote, "state") ?? null, "OPEN") || !c.equal(c.get(remote, "is_draft") ?? null, false)) {
+      throw new Error("Ready entry requires fresh open, ready PR evidence.");
+    }
+    return requiredText(remote, "head");
+  }
+  return requiredText(target, "published_head");
+}
 /** Accept a completed child result from the original path, including after master loss. */
 function adoptChild(plan, input) {
   c.assertType(plan, "array", "adoptChild.plan");
@@ -388,10 +401,12 @@ function changePlan(plan, input) {
     if (c.get(plan, "reviewer") != null && !c.equal(c.get(evidence, "reviewer") ?? null, c.get(plan, "reviewer"))) {
       throw new Error("Completion evidence does not match the selected reviewer.");
     }
-    if (!c.equal(c.get(evidence, "status") ?? null, "complete") || !c.equal(c.get(evidence, "pr_url") ?? null, c.get(target, "pr_url") ?? null) || !c.equal(c.get(evidence, "head") ?? null, c.get(target, "published_head") ?? null)) {
+    head = c.clone(completionHead(input, target));
+    if (!c.equal(c.get(evidence, "status") ?? null, "complete") || !c.equal(c.get(evidence, "pr_url") ?? null, c.get(target, "pr_url") ?? null) || !c.equal(c.get(evidence, "head") ?? null, head)) {
       throw new Error("Reviewer completion evidence does not match the PR head.");
     }
-    observedHead(input, c.get(target, "pr_url"), c.get(target, "published_head"));
+    observedHead(input, requiredText(target, "pr_url"), head);
+    c.set(plan, ["targets", id, "published_head"], "=", head);
     c.set(plan, ["targets", id, "phase_records", "reviewer_gate"], "=", c.entriesArray([["status", "complete"], ["evidence_path", evidencePath], ["completed_at", c.gmdate("c")]]));
     result = c.clone(c.entriesArray([["event", "gate_complete"], ["target_id", id]]));
   } else if (c.equal(action, "mutation-start")) {
@@ -473,14 +488,16 @@ function changePlan(plan, input) {
     if (c.get(target, "mutations", "ready") != null && !c.equal(c.get(target, "mutations", "ready", "status") ?? null, "complete")) {
       throw new Error("Ready promotion is unresolved.");
     }
+    head = c.clone(completionHead(input, target));
     report = c.clone(jsonFile(requiredText(input, "result_path")));
-    if (!c.equal(c.get(report, "status") ?? null, "complete") || !c.equal(c.get(report, "pr_url") ?? null, c.get(target, "pr_url") ?? null) || !c.equal(c.get(report, "published_head") ?? null, c.get(target, "published_head") ?? null) || !c.equal(c.get(report, "cleanup_success") ?? null, true)) {
+    if (!c.equal(c.get(report, "status") ?? null, "complete") || !c.equal(c.get(report, "pr_url") ?? null, c.get(target, "pr_url") ?? null) || !c.equal(c.get(report, "published_head") ?? null, head) || !c.equal(c.get(report, "cleanup_success") ?? null, true)) {
       throw new Error("Target result identity or cleanup is incomplete.");
     }
     if (c.truth(skipReady) && !c.equal(c.get(report, "ready_goodcode_status") ?? null, "skipped_noreviewer")) {
       throw new Error("NOREVIEWER skip is missing from the target result.");
     }
-    observedHead(input, c.get(target, "pr_url"), c.get(target, "published_head"));
+    observedHead(input, requiredText(target, "pr_url"), head);
+    c.set(plan, ["targets", id, "published_head"], "=", head);
     c.set(plan, ["targets", id, "status"], "=", "complete");
     c.set(plan, ["targets", id, "result_path"], "=", c.get(input, "result_path"));
     c.set(plan, ["targets", id, "merge_status"], "=", c.equal(c.get(plan, "merge_enabled") ?? false, true) ? "pending" : "skipped_not_requested");
