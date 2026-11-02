@@ -9,6 +9,15 @@ Apply the shared [profile contract](../bork-doitall/references/profile.md) befor
 
 Inspect the issues the user names, identify related implementation work and dependencies, and present clear batches that can be passed to `bork-doitall`. This skill plans the grouping. `bork-doitall` owns execution, its approval gate, and its issue and PR workflow.
 
+## Coding Principles
+
+Apply these principles within this skill's planning, implementation, review, or fix role, without relying on AGENTS.md to supply them:
+
+- **DRY (Don't Repeat Yourself):** Avoid duplicated logic by extracting reusable functions, classes, or modules.
+- **SoC (Separation of Concerns):** Keep functions, classes, and features focused on a single responsibility and isolate unrelated behavior.
+- **KISS (Keep It Simple):** Do only what the task or plan calls for. No extra abstractions, refactors of untouched code, or helpers and wrappers added only for tests. Keep diffs small; DRY and SoC never justify growing a PR beyond its scope.
+- **YAGNI (You Aren't Gonna Need It):** Build only what current requirements need. Do not add features, extension points, or abstractions for hypothetical future use.
+
 ## Embedded Planning Mode
 
 When called by `bork-doitall` for multiple canonical roots, apply the grouping criteria and coverage checks below to its already-discovered issue/PR targets, including verified descendants. Reuse the supplied evidence and inspect only missing context; do not restart doitall or launch another coordinator. Return logical group membership, rationale, dispositions, and evidenced dependencies to the caller. In this mode, replace the separate invocation output in steps 4, 6, and 7 with groups inside the caller's single execution plan. Doitall retains its target scope, dependency scheduler, separate target implementations and PRs, and sole `go` gate. Grouping alone does not combine PRs or authorize separate execution runs. Standalone use retains the workflow below.

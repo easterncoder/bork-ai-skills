@@ -7,6 +7,15 @@ description: Run the full GitHub issue/PR workflow, including discovered sub-iss
 
 Apply the shared [profile contract](../bork-doitall/references/profile.md) before starting. Preserve any supplied profile in nested calls; default to `generic`.
 
+## Coding Principles
+
+Apply these principles within this skill's planning, implementation, review, or fix role, without relying on AGENTS.md to supply them:
+
+- **DRY (Don't Repeat Yourself):** Avoid duplicated logic by extracting reusable functions, classes, or modules.
+- **SoC (Separation of Concerns):** Keep functions, classes, and features focused on a single responsibility and isolate unrelated behavior.
+- **KISS (Keep It Simple):** Do only what the task or plan calls for. No extra abstractions, refactors of untouched code, or helpers and wrappers added only for tests. Keep diffs small; DRY and SoC never justify growing a PR beyond its scope.
+- **YAGNI (You Aren't Gonna Need It):** Build only what current requirements need. Do not add features, extension points, or abstractions for hypothetical future use.
+
 ## Contract
 
 Accept any number of distinct issue/PR root targets from the current GitHub project, supplied as numbers or URLs. A root target is one canonical issue or PR, not one raw argument. Recursively discover GitHub sub-issues beneath supplied issues, include every descendant in read-only triage, and add each open actionable descendant to the work queue. A target's request repository and implementation repository may differ when explicit requirements or verified relationships establish where the code change belongs. Process one target's implementation and review at a time by default before starting the next eligible target. In approved `DOMERGE` batches, finalize merges after implementation in reverse dependency order. Allow two or three concurrent implementation targets only when explicitly requested by the user. Select hc when actively inside hc, otherwise Herdr when actively inside Herdr, otherwise tmux when actively inside tmux, otherwise Screen when actively inside Screen, otherwise native; verify membership separately from capacity and block invalid explicit context without falling back. Use one hc master terminal, Herdr master pane, tmux or Screen master session, or native master subagent per active target under the capability checks in [agent execution](references/panes.md). Each master delegates prify and goodcode as native subagents; goodcode runs review and fix through the selected execution driver. Keep all agents on the invoking host. Goodcode chooses models and reasoning effort from a per-PR effort tier within that host's available capabilities.

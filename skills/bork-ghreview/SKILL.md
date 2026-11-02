@@ -9,6 +9,15 @@ Apply the shared [profile contract](../bork-doitall/references/profile.md) befor
 
 Review the requested PR and print the result in the conversation. Stay within the PR's intended scope. Finish after one review; do not wait for fixes or automation. After printing the completed review, ask whether the user wants it posted to the PR.
 
+## Coding Principles
+
+Apply these principles within this skill's planning, implementation, review, or fix role, without relying on AGENTS.md to supply them:
+
+- **DRY (Don't Repeat Yourself):** Avoid duplicated logic by extracting reusable functions, classes, or modules.
+- **SoC (Separation of Concerns):** Keep functions, classes, and features focused on a single responsibility and isolate unrelated behavior.
+- **KISS (Keep It Simple):** Do only what the task or plan calls for. No extra abstractions, refactors of untouched code, or helpers and wrappers added only for tests. Keep diffs small; DRY and SoC never justify growing a PR beyond its scope.
+- **YAGNI (You Aren't Gonna Need It):** Build only what current requirements need. Do not add features, extension points, or abstractions for hypothetical future use.
+
 ## Resolve the Target and Context
 
 1. Resolve the explicit PR URL or number and repository. If omitted, use the current branch's PR only when unambiguous. Ask for the target if it cannot be established safely. Read applicable repository instructions.
