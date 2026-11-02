@@ -36,6 +36,6 @@ The context owner fetches complete paginated PR/issue/check/thread snapshots at 
 
 ## Compact Evidence and Reports
 
-Keep full snapshots, logs, findings and validation in durable files. Helper output defaults to events, IDs, counts and paths. Read only changed evidence and the complete code paths needed to judge it; never truncate required findings. Successful validation returns a short result plus its log path; failures expose relevant diagnostics, with complete logs retained. Use [reporting](reporting.md) for all five skills.
+Keep full snapshots, logs, findings and validation in durable files. Helper output defaults to events, IDs, counts and paths. Read only changed evidence and the complete code paths needed to judge it; never truncate required findings. Successful validation returns a short result plus its log path; failures expose relevant diagnostics, with complete logs retained. Use [reporting](reporting.md) for the coordinated implementation, review and fix workflows; standalone ghreview retains its own printed-result format.
 
 Use [reuse and validation](reuse.md) when importing evidence between phases. Use [runtime actions](runtime-actions.md) for `snapshot`, `brief`, `record`, `reuse-review`, `automation-poll` and `automation-assess`. Only owners load polling schemas. Save per-phase usage reported by the host (input/output/cached/reasoning tokens when exposed); unknown usage is null, never an estimate. This supports before/after comparisons without extra model calls.

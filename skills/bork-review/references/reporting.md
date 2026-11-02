@@ -1,6 +1,6 @@
 # Default Reports
 
-All five skills default to a TLDR that can be read at a glance. Use at most four short bullets for a single target, generally:
+The coordinated implementation, review and fix workflows default to a TLDR that can be read at a glance. Use at most four short bullets for a single target, generally:
 
 - Outcome and linked PR (or issue when blocked before publication).
 - Validation: pass/fail plus a short limitation if relevant.

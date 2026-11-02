@@ -17,6 +17,8 @@ Apply these principles within this skill's planning, implementation, review, or 
 - **SoC (Separation of Concerns):** Keep functions, classes, and features focused on a single responsibility and isolate unrelated behavior.
 - **KISS (Keep It Simple):** Do only what the task or plan calls for. No extra abstractions, refactors of untouched code, or helpers and wrappers added only for tests. Keep diffs small; DRY and SoC never justify growing a PR beyond its scope.
 - **YAGNI (You Aren't Gonna Need It):** Build only what current requirements need. Do not add features, extension points, or abstractions for hypothetical future use.
+- **No bloat:** Do not introduce or request unnecessary code, dependencies, configuration, abstractions, helpers, wrappers, or tests. Every addition must directly support an in-scope requirement or demonstrated regression. Prefer the smallest clear solution using existing project patterns; do not grow the change for speculative reuse, optional cleanup, or review preferences.
+- **Requirement scope:** Limit planning, implementation, and fixes to the issue and PR requirements, explicit user constraints, approved clarifications, and concrete regressions introduced or exposed by the change. Each edit must satisfy an in-scope requirement or correct a demonstrated regression using the smallest necessary change. A shared file, subsystem, dependency, or external review request does not expand scope. Leave adjacent cleanup, optional refactors, speculative hardening, and unaffected pre-existing defects for separate work; record material discoveries without adding them to this implementation.
 
 ## Embedded Planning Mode
 
