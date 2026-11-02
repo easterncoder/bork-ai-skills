@@ -28,8 +28,8 @@ If the host exposes only one eligible model, use it for both agents at the tier'
 
 ## Escalate
 
-Raise the tier one step (`low` to `standard`, `standard` to `high`) when two completed cycles in a row end without reaching `good`. Apply it from the next cycle, re-resolve the bindings, and record the old and new tier, the cycle and the reason in `session.json`. Never lower the tier within a run. The Loop Guard stops still apply at every tier.
+Raise the tier one step (`low` to `standard`, `standard` to `high`) after two consecutive review passes hand off blocking findings (`reviewed`), or two consecutive completed bot-loop cycles trigger another cycle instead of completing the run. Apply it from the next cycle, re-resolve the bindings, and record the old and new tier, the cycle and the reason in `session.json`. Never lower the tier within a run. The Loop Guard stops still apply at every tier.
 
 ## Report
 
-State the final tier, whether it came from computation or an override, the models and effort used per role, and any escalation in the goodcode result and the final report. Doitall's plan preview carries only an estimate made before the PR diff exists; when goodcode's computed tier differs, report both. A higher computed tier applies at once. A lower one also applies, and the report says the estimate was higher.
+Record the final tier, whether it came from computation or an override, the models and effort used per role, and any escalation in the durable goodcode result. Keep the default final report within the shared TLDR format; include model details when requested or when a fallback materially limits the outcome. Doitall's plan preview carries only an estimate made before the PR diff exists; when goodcode's computed tier differs, record both in the durable result. A higher computed tier applies at once. A lower one also applies, and the durable result says the estimate was higher.
