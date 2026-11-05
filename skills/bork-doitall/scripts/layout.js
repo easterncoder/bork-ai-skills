@@ -47,6 +47,7 @@ function borkLayoutVerify(record, geometry = true, rendered = true) {
   c.assertType(rendered, "bool", "borkLayoutVerify.rendered");
   if (record.version === 2) return require('./layout-demand.js').verify(record, rendered);
   let id, ids, pane, placement, resource, snapshot;
+  const source = record;
   record = c.clone(record);
   geometry = c.clone(geometry);
   rendered = c.clone(rendered);
@@ -54,6 +55,7 @@ function borkLayoutVerify(record, geometry = true, rendered = true) {
     throw new Error("Uncertain layout mutation requires reconciliation; do not repeat it.");
   }
   snapshot = c.clone(borkLayoutSnapshot(record));
+  if (geometry && rendered && record.state === 'ready') snapshot = require('./layout-resize.js').refreshSnapshot(record, snapshot);
   for (const [_key, _value] of c.entries(c.get(record, "resources"))) {
     placement = _key;
     resource = c.clone(_value);
@@ -68,21 +70,16 @@ function borkLayoutVerify(record, geometry = true, rendered = true) {
       if (c.equal(c.get(record, "driver"), "hc") && !c.equal(placement, "coordinator") && c.truth(geometry) && c.truth(rendered) && (c.get(pane, "cols") < 35 || c.get(pane, "rows") < 6)) {
         throw new Error("Rendered App terminal is below usable worker bounds; preserve layout for recovery.");
       }
-      if (c.equal(c.get(record, "driver"), "hc") && c.get(resource, "actual_cells") != null && c.truth(geometry) && c.truth(rendered) && !c.equal(c.get(resource, "actual_cells"), [c.get(pane, "cols"), c.get(pane, "rows")])) {
-        throw new Error(c.string(c.string(c.string(c.string(c.string(c.string("Rendered App geometry changed for ") + c.string(placement)) + c.string(": expected ")) + c.string(c.json_encode(c.get(resource, "actual_cells")))) + c.string(", observed ")) + c.string(c.json_encode([c.get(pane, "cols"), c.get(pane, "rows")]))) + c.string("; reconcile resize before new claims."));
-      }
-      if (c.truth(geometry)) {
-        require("./layout-plan.js").borkLayoutGeometry(c.get(record, "plan", "slots", placement), pane, c.equal(c.get(record, "driver"), "herdr") ? 1 : 0);
-      }
+      if (geometry && placement !== 'coordinator' && (pane.width < 35 || pane.height < 6)) throw new Error('Resized worker is below usable bounds: requires 35 columns and 6 rows.');
     }
   }
   for (const [_key, _value] of c.entries(c.get(record, "original", "panes"))) {
     id = _key;
     pane = c.clone(_value);
     {
-      if (!c.equal(c.string(id), c.get(record, "coordinator"))) {
-        require("./layout-plan.js").borkLayoutGeometry(pane, c.get(snapshot, "panes", id) ?? []);
-      }
+      const live = snapshot.panes[id];
+      if (!live || ['window', 'session', 'pid', 'terminal', 'created_ms'].some(key => pane[key] != null && pane[key] !== live[key])) throw new Error('Original pane identity changed.');
+      if (!geometry && id !== record.coordinator) require('./layout-plan.js').borkLayoutGeometry(pane, live);
     }
   }
   ids = c.clone(c.array_column(c.get(record, "resources"), "id"));
@@ -94,6 +91,17 @@ function borkLayoutVerify(record, geometry = true, rendered = true) {
         throw new Error("An unrelated pane appeared; reconcile before modifying the layout.");
       }
     }
+  }
+  if (geometry) {
+    if (record.state === 'ready' && require('./layout-resize.js').adoptResize(record, snapshot, rendered)) {
+      borkLayoutWrite(record.record, record);
+      Object.assign(source, record);
+    }
+    for (const [key, resource] of Object.entries(record.resources)) {
+      require('./layout-plan.js').borkLayoutGeometry(record.plan.slots[key], snapshot.panes[resource.id], record.driver === 'herdr' ? 1 : 0);
+      if (rendered && record.driver === 'hc' && resource.actual_cells && JSON.stringify(resource.actual_cells) !== JSON.stringify([snapshot.panes[resource.id].cols, snapshot.panes[resource.id].rows])) throw new Error('Rendered App geometry changed during layout mutation.');
+    }
+    for (const [id, pane] of Object.entries(record.original.panes)) if (id !== record.coordinator) require('./layout-plan.js').borkLayoutGeometry(pane, snapshot.panes[id]);
   }
   return snapshot;
 }
@@ -330,6 +338,7 @@ function borkLayoutCleanup(input, record) {
       }
     }
   }
+  if (record.state === 'ready') borkLayoutVerify(record);
   borkLayoutVerify(record, false);
   for (const [_key, _value] of c.entries(c.array_keys(c.get(record, "resources")))) {
     key = c.clone(_value);
@@ -397,6 +406,8 @@ function layoutDispatch(action, input) {
     if (actions[action]) return actions[action]();
   } else if (record.version !== 1) throw new Error('Unsupported layout journal version; preserve it for recovery.');
   switch (action) {
+    case 'reconcile':
+      return {state: 'ready', snapshot: borkLayoutVerify(record)};
     case 'verify':
       return borkLayoutVerify(record);
     case 'inspect':

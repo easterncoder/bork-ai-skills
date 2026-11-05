@@ -282,3 +282,51 @@ test('demand launch guards preserve live occupants after user resize or foreign 
     assert.equal(f.tmux('display-message', '-p', '-t', master.id, '#{pane_pid}'), String(pid));
   });
 });
+
+/** Adopt window resizing without replacing workers or restoring obsolete foreign rectangles. */
+test('window resize preserves workers through admission, turnover and cleanup', {skip: cp.spawnSync('tmux', ['-V']).status !== 0}, () => {
+  fixture(200, 60, f => {
+    const foreign = f.tmux('split-window', '-d', '-h', '-l', '25', '-P', '-F', '#{pane_id}', '-t', f.coordinator);
+    f.action('create', {driver: 'tmux', context: f.context, coordinator: f.coordinator, concurrency: 2, cwd: f.directory, run_id: 'window-resize'});
+    f.action('admit', {target_id: 'target-1', slot: 1});
+    const master = f.action('claim', identity('master', 1));
+    const review = f.action('claim', identity('review', 1));
+    const fix = f.action('claim', identity('fix', 1));
+    const before = f.action('inspect').snapshot;
+    for (const [width, height] of [[260, 80], [180, 50]]) {
+      f.tmux('resize-window', '-t', f.coordinator, '-x', String(width), '-y', String(height));
+      const resized = f.action('inspect').snapshot;
+      f.action('reconcile');
+      const verified = f.action('verify');
+      assert.deepEqual(verified.panes, resized.panes);
+      for (const id of [master.id, review.id, fix.id, foreign]) assert.equal(verified.panes[id].pid, before.panes[id].pid);
+    }
+    const resizedForeign = f.action('inspect').snapshot.panes[foreign];
+    release(f, 'review', 1);
+    f.action('claim', identity('review', 1, 2));
+    assert.deepEqual(f.action('inspect').snapshot.panes[foreign], resizedForeign);
+    release(f, 'review', 1, 2);
+    release(f, 'fix', 1);
+    release(f, 'master', 1);
+    f.action('cleanup', {results_verified: true, descendants_stopped: true});
+    assert.deepEqual(f.action('inspect').snapshot.panes[foreign], resizedForeign);
+  });
+});
+
+
+/** Preserve fixed-journal placeholders while adopting resized cleanup geometry. */
+test('fixed tmux journals survive window resize through claim and cleanup', {skip: cp.spawnSync('tmux', ['-V']).status !== 0}, () => {
+  fixture(200, 60, f => {
+    const foreign = f.tmux('split-window', '-d', '-h', '-l', '25', '-P', '-F', '#{pane_id}', '-t', f.coordinator);
+    f.action('create', {driver: 'tmux', lifecycle: 'fixed', context: f.context, coordinator: f.coordinator, concurrency: 1, cwd: f.directory, run_id: 'fixed-resize'});
+    f.tmux('resize-window', '-t', f.coordinator, '-x', '240', '-y', '70');
+    const worker = f.action('claim', identity('review', 1));
+    release(f, 'review', 1);
+    f.tmux('resize-window', '-t', f.coordinator, '-x', '220', '-y', '65');
+    const before = f.action('inspect').snapshot;
+    f.action('cleanup', {results_verified: true, descendants_stopped: true});
+    const after = f.action('inspect').snapshot;
+    assert.ok(!after.panes[worker.id]);
+    assert.deepEqual(after.panes[foreign], before.panes[foreign]);
+  });
+});
