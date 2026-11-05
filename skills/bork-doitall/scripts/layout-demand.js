@@ -198,29 +198,35 @@ function gap(record) { return record.driver === 'herdr' ? 0 : 1; }
 function planFor(record, topology, reserve = false) { return demandPlan(record.plan.concurrency, record.plan.area, topology, gap(record), reserve, record.driver === 'hc' ? {width: 37, height: 8} : {width: 35, height: 6}); }
 
 /** Verify ownership independently of current user focus. */
-function verify(record, rendered = true) {
+function verify(record, rendered = true, resize = true) {
   if (record.version !== 2 || record.lifecycle !== 'demand' || record.state !== 'ready') throw new Error('Demand journal is not ready.');
   if (record.pending) throw new Error('Uncertain demand mutation requires layout reconcile; do not repeat the launch.');
-  const snapshot = require('./layout.js').borkLayoutSnapshot(record);
+  let snapshot = require('./layout.js').borkLayoutSnapshot(record);
+  if (resize && rendered) snapshot = require('./layout-resize.js').refreshSnapshot(record, snapshot);
   const ids = new Set(Object.values(record.resources).map(resource => resource.id));
   for (const [key, resource] of Object.entries(record.resources)) {
     const pane = snapshot.panes[resource.id];
     if (!pane || pane.window !== record.original.panes[record.coordinator].window) throw new Error('Owned demand pane missing or changed window.');
     if (record.driver === 'tmux' && key !== 'coordinator' && (pane.owner !== record.run_id || pane.placement !== key)) throw new Error('Demand pane ownership changed.');
-    borkLayoutGeometry(record.plan.slots[key], pane, record.driver === 'herdr' ? 1 : 0);
     if (record.driver === 'herdr') {
       const info = require('./layout-adapters/herdr.js').borkLayoutHerdr(record.context, ['pane', 'process-info', '--pane', resource.id]).process_info;
       if (info.shell_pid !== resource.shell_pid) throw new Error('Herdr shell identity changed; preserve its occupant.');
     }
     if (record.driver === 'hc' && (pane.terminal !== resource.terminal && key !== 'coordinator' || (resource.visible_created_ms ?? resource.created_ms) && pane.created_ms !== (resource.visible_created_ms ?? resource.created_ms))) throw new Error('App shell terminal identity changed.');
-    if (rendered && record.driver === 'hc' && resource.actual_cells && (pane.cols !== resource.actual_cells[0] || pane.rows !== resource.actual_cells[1])) throw new Error('Rendered App geometry changed; reconcile resize before another launch.');
   }
   for (const [id, pane] of Object.entries(record.original.panes)) {
-    if (id !== record.coordinator) borkLayoutGeometry(pane, snapshot.panes[id] ?? {});
+    const live = snapshot.panes[id];
+    if (!live || ['window', 'session', 'pid', 'terminal', 'created_ms'].some(key => pane[key] != null && pane[key] !== live[key])) throw new Error('Original pane identity changed.');
   }
   for (const id of Object.keys(snapshot.panes)) {
     if (!record.original.panes[id] && !ids.has(id)) throw new Error('Foreign pane appeared; reconcile before mutation.');
   }
+  if (resize && require('./layout-resize.js').adoptResize(record, snapshot, rendered)) save(record);
+  for (const [key, resource] of Object.entries(record.resources)) {
+    borkLayoutGeometry(record.plan.slots[key], snapshot.panes[resource.id], record.driver === 'herdr' ? 1 : 0);
+    if (rendered && record.driver === 'hc' && resource.actual_cells && JSON.stringify(resource.actual_cells) !== JSON.stringify([snapshot.panes[resource.id].cols, snapshot.panes[resource.id].rows])) throw new Error('Rendered App geometry changed during layout mutation.');
+  }
+  for (const [id, pane] of Object.entries(record.original.panes)) if (id !== record.coordinator) borkLayoutGeometry(pane, snapshot.panes[id]);
   return snapshot;
 }
 
@@ -230,7 +236,7 @@ function finish(record) {
   require('./layout-demand-host.js').reflow(record, ownedTree(pending.desired_plan, record.resources));
   record.plan = pending.desired_plan;
   record.pending = null;
-  try { verify(record); } catch (error) { record.pending = pending; save(record); throw error; }
+  try { verify(record, true, false); } catch (error) { record.pending = pending; save(record); throw error; }
   record.generation++;
   record.capacity_generation++;
   for (const waiter of Object.values(record.capacity_waiters)) waiter.wake_generation = record.capacity_generation;
@@ -242,6 +248,7 @@ function create(input, preflight) {
   if (!['tmux', 'herdr', 'hc', 'screen'].includes(input.driver)) throw new Error('Unsupported demand host.');
   const area = Object.fromEntries(['x', 'y', 'width', 'height'].map(key => [key, preflight.snapshot.panes[input.coordinator][key]]));
   const record = {...input, version: 2, lifecycle: 'demand', state: 'ready', context: preflight.context, capability: preflight.capability, original: preflight.snapshot, plan: demandPlan(input.concurrency ?? 1, area, {}, input.driver === 'herdr' ? 0 : 1), resources: {coordinator: {id: input.coordinator, state: 'protected'}}, history: [], pending: null, admissions: {}, capacity_waiters: {}, generation: 0, capacity_generation: 0};
+  if (record.driver === 'hc') record.resources.coordinator.actual_cells = [preflight.snapshot.panes[input.coordinator].cols, preflight.snapshot.panes[input.coordinator].rows];
   require('./layout-demand-host.js').initialize(record);
   if (record.driver === 'herdr') record.resources.coordinator.shell_pid = require('./layout-adapters/herdr.js').borkLayoutHerdr(record.context, ['pane', 'process-info', '--pane', record.coordinator]).process_info.shell_pid;
   verify(record);
@@ -255,11 +262,10 @@ function admission(record, input) {
   const target = input.target_id;
   if (typeof target !== 'string' || !target) throw new Error('Admission requires a target identity.');
   const prior = Object.entries(record.admissions).find(([, value]) => value.target_id === target);
-  if (prior) return {admitted: true, slot: Number(prior[0]), generation: record.capacity_generation};
   const occupied = new Set(Object.keys(record.admissions).map(Number));
   for (const slot of Object.keys(topologyFor(record.resources))) occupied.add(Number(slot));
-  const slot = input.slot ?? Array.from({length: record.plan.concurrency}, (_, index) => index + 1).find(value => !occupied.has(value));
-  if (slot !== undefined && (!Number.isInteger(slot) || slot < 1 || slot > record.plan.concurrency || occupied.has(slot))) throw new Error('Admission slot is invalid or belongs to another target.');
+  const slot = (prior ? Number(prior[0]) : input.slot) ?? Array.from({length: record.plan.concurrency}, (_, index) => index + 1).find(value => !occupied.has(value));
+  if (slot !== undefined && (!Number.isInteger(slot) || slot < 1 || slot > record.plan.concurrency || (!prior && occupied.has(slot)))) throw new Error('Admission slot is invalid or belongs to another target.');
   const candidate = Object.fromEntries([...occupied].map(value => [value, ['master']]));
   if (slot !== undefined) candidate[slot] = ['master'];
   try {
@@ -309,6 +315,7 @@ function claim(input, record) {
   }
   const topology = topologyFor(record.resources);
   (topology[slot] ??= []).push(role);
+  planFor(record, topology, true);
   const plan = planFor(record, topology);
   let parent;
   if (role === 'master') parent = Object.keys(record.resources).find(value => value.startsWith('master:')) ?? 'coordinator';
