@@ -11,7 +11,7 @@ Apply unqualified instructions to all supplied roots and their discovered sub-is
 | Instruction concerns | Recipients and responsibility |
 | --- | --- |
 | Behavior, acceptance criteria, compatibility, architecture, implementation limits | `bork-prify` implements; `bork-review` verifies; `bork-fix` preserves the constraint while fixing findings. Both `bork-goodcode` phases carry it as product intent. |
-| Required tests or validation | `bork-prify` and `bork-fix` run applicable checks; `bork-review` assesses coverage and evidence; `bork-goodcode` enforces completion and evidence reuse rules. |
+| Required tests or validation | `bork-prify` and `bork-fix` run applicable checks; `bork-review` assesses coverage and evidence; `bork-goodcode` invokes `bork-test` after the tandem converges and enforces completion and evidence reuse rules. Pass relevant acceptance criteria, environment constraints, and test instructions to `bork-test` too. |
 | Review emphasis or finding policy | `bork-review` through `bork-goodcode`; include in `bork-fix` when it affects remediation. Review emphasis adds attention without silently excluding required correctness checks. |
 | Supplied profile | Coordinator retains approved path/hash and snapshot; each destination loads only its applicable sections and forwards role-scoped constraints through `instruction_paths`. |
 | Commit identity, signing, commit content | `bork-prify` and `bork-fix` create commits; `bork-goodcode` verifies publication requirements. |

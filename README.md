@@ -7,14 +7,15 @@ A private collection of skills for GitHub issue and pull request workflows, avai
 | `bork-batch` | Group related issues for execution. |
 | `bork-doitall` | Coordinate the issue/PR workflow through implementation and review. |
 | `bork-prify` | Implement one issue and publish a draft PR. |
-| `bork-goodcode` | Coordinate review, fixes, pushes, and ready-PR feedback. |
+| `bork-goodcode` | Coordinate review, fixes, E2E/browser testing, pushes, and ready-PR feedback. |
 | `bork-review` | Review within the coordinated review/fix loop. |
 | `bork-fix` | Fix and validate the loop's blocking findings. |
+| `bork-test` | Run focused E2E and browser acceptance checks with retained evidence. |
 | `bork-ghreview` | Perform one PR review, with confirmation before posting. |
 
 ## Install without the plugin
 
-The plugin is optional. You can install the skill folders directly in your agent's skills directory. Keep all seven BORK folders together because the workflows call each other and use relative sibling links.
+The plugin is optional. You can install the skill folders directly in your agent's skills directory. Keep all eight BORK folders together because the workflows call each other and use relative sibling links.
 
 For a shared installation, authenticate GitHub access to this private repository, then clone it into a permanent location and link its skills into `~/.agents/skills`:
 
@@ -42,7 +43,7 @@ mkdir -p ~/.claude/skills
 ln -s ~/.agents/skills/bork-* ~/.claude/skills/
 ```
 
-You can also copy all seven folders instead of linking them, but copied installations require separate updates. For a project-scoped installation, Codex and Antigravity support `<project>/.agents/skills/`; Claude Code uses `<project>/.claude/skills/`.
+You can also copy all eight folders instead of linking them, but copied installations require separate updates. For a project-scoped installation, Codex and Antigravity support `<project>/.agents/skills/`; Claude Code uses `<project>/.claude/skills/`.
 
 Start a new conversation after installation. Invoke a standalone skill as `$bork-doitall 123` in Codex CLI or `/bork-doitall 123` in Claude Code. Standalone installation has the same [requirements and behavior](#requirements-and-behavior) as the plugin.
 
@@ -91,6 +92,8 @@ If you report running inside hc, Herdr, tmux or Screen but the tool process lack
 
 Each skill retains its own authorization boundaries. Doitall displays a plan and requires a separate `go`, defaults to `REVIEWER=NONE`, and merges only with approved `DOMERGE`. Prify and goodcode have their documented publication behavior. Ghreview asks before posting its completed review. Review and fix use their coordination contract.
 
+Goodcode invokes `bork-test` after review and fixes converge, before declaring success or removing its worktree. Required E2E/browser checks must pass against the identified implementation; failures return through review and fix, and unavailable required validation blocks completion. Test evidence is retained through `validation.json`. Entry paths that skip goodcode also skip this testing gate and are reported as untested.
+
 ## Repository layout
 
 ```text
@@ -98,7 +101,7 @@ plugin.json                         Portable Agent Plugins manifest
 .agents/plugins/marketplace.json    Codex repository marketplace
 .claude-plugin/plugin.json          Claude Code compatibility manifest
 .claude-plugin/marketplace.json     Claude Code repository marketplace
-skills/bork-*/                      Seven skills and bundled references/helpers/tests
+skills/bork-*/                      Eight skills and bundled references/helpers/tests
 ```
 
 Keep the skills together: their relative sibling links resolve when installed as adjacent folders, including inside the plugin. Source files were imported from the installed BORK skills; edits in this repository do not automatically update those original copies.

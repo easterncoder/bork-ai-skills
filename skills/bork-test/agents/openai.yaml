@@ -1,0 +1,4 @@
+interface:
+  display_name: "BORK Test"
+  short_description: "Focused E2E and browser acceptance testing"
+  default_prompt: "Use $bork-test to validate the affected user journeys and retain reproducible test evidence."
