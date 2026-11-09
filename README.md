@@ -29,13 +29,13 @@ ln -s "$PWD"/skills/bork-* ~/.agents/skills/
 
 These commands do not overwrite existing entries. If BORK is already installed there, reuse that installation or deliberately replace its links. Keep the clone at the same path while using these symlinks. To update the linked skills, run `git pull --ff-only` in the clone.
 
-Codex and Grok Build discover `~/.agents/skills` directly. Other hosts can share the same files through symlinks from their own discovery directories:
+[Codex discovers `~/.agents/skills` directly](https://developers.openai.com/codex/skills). Other hosts can share the same files through symlinks from their documented discovery directories:
 
 | Host | Global skills directory |
 | --- | --- |
-| Claude Code | `~/.claude/skills/` |
-| Antigravity App and standalone IDE | `~/.gemini/config/skills/` |
-| Antigravity CLI | `~/.gemini/antigravity-cli/skills/` |
+| [Claude Code](https://code.claude.com/docs/en/skills#choose-where-skills-load) | `~/.claude/skills/` |
+| [Grok Build](https://docs.x.ai/build/features/skills-plugins-marketplaces) | `~/.grok/skills/` |
+| [Antigravity App, CLI and standalone IDE](https://antigravity.google/docs/skills) | `~/.gemini/config/skills/` |
 
 For example, if Claude Code does not already reach the shared skills through an existing symlink:
 
@@ -44,7 +44,7 @@ mkdir -p ~/.claude/skills
 ln -s ~/.agents/skills/bork-* ~/.claude/skills/
 ```
 
-You can also copy all eight folders instead of linking them, but copied installations require separate updates. For a project-scoped installation, Codex and Antigravity support `<project>/.agents/skills/`; Claude Code uses `<project>/.claude/skills/`.
+You can also copy all eight folders instead of linking them, but copied installations require separate updates. For a project-scoped installation, Codex and Antigravity support `<project>/.agents/skills/`; Claude Code uses `<project>/.claude/skills/`, and Grok Build uses `<project>/.grok/skills/`. Skill discovery alone does not establish that a host can run every workflow; the execution requirements below still apply.
 
 Start a new conversation after installation. Invoke a standalone skill as `$bork-doitall 123` in Codex CLI or `/bork-doitall 123` in Claude Code. Standalone installation has the same [requirements and behavior](#requirements-and-behavior) as the plugin.
 
@@ -81,13 +81,15 @@ Restart Claude Code after installation. Invoke a bundled skill with its plugin n
 /bork:bork-goodcode 123
 ```
 
-Claude Code also accepts `/bork-doitall 123` or `/bork-goodcode 123` when no other command uses that name. The namespaced form explicitly selects the plugin's skill.
+Current [Claude Code documentation](https://code.claude.com/docs/en/skills#how-a-skill-gets-its-command-name) also supports `/bork-doitall 123` or `/bork-goodcode 123` when no other command uses that name. The namespaced form explicitly selects the plugin's skill.
 
 Inside Claude Code, the equivalent install commands are `/plugin marketplace add OWNER/REPO` and `/plugin install bork@bork-ai-skills`.
 
 ## Requirements and behavior
 
-Use a host with terminal access, Git, authenticated GitHub CLI (`gh`), Node.js 22+ from a maintained LTS line, util-linux `flock` on Linux for serialized batch/layout mutations. Signing workflows need a configured signing key and signature verification trust. Standalone goodcode also selects hc, Herdr, tmux, Screen, then native for its concurrent review/fix workers. Doitall selects the active environment: hc first, otherwise Herdr, otherwise tmux, otherwise Screen, otherwise native. It verifies live membership separately from capacity and blocks invalid explicit context or an incapable selected driver without falling back. Herdr requires an inherited Herdr TUI context and a reachable compatible session API; installation alone is insufficient. All terminal drivers require the invoking host's CLI; doitall additionally requires native prify/goodcode child capacity. Terminal membership requires a supported process-ancestry probe (`ps -eo pid=,ppid=` in the shared helper), and launch commands use the destination shell's quoting. Native mode requires the full nested agent capacity documented in the skill. Herdr, tmux and Screen are optional; tmux integration tests require tmux; Screen tests require GNU Screen and Linux procfs. A skills-only plugin does not supply these executables or credentials. The helpers use CommonJS and Node built-ins without npm installation or a build step. See the [runtime dependency and upgrade contract](skills/bork-review/references/portable-runtime.md#runtime-dependencies-and-upgrades) for locking, platform support and coexistence with existing batches.
+Use a host with terminal access, Git, authenticated GitHub CLI (`gh`), and Node.js 22+ from a maintained LTS line. Serialized batch/layout mutations require Linux, util-linux `flock`, and a local filesystem supporting advisory locks and atomic rename; native Windows is unsupported for those mutations. Signing workflows need a configured signing key and signature verification trust. A skills-only plugin does not supply these executables or credentials. The helpers use CommonJS and Node built-ins without npm installation or a build step. See the [runtime dependency and upgrade contract](skills/bork-review/references/portable-runtime.md#runtime-dependencies-and-upgrades) for locking, platform support and coexistence with existing batches.
+
+Standalone goodcode and doitall select by verified active membership in this order: hc, Herdr, tmux, Screen, then native. They verify membership separately from capacity and block invalid explicit context or an incapable selected driver without falling back. Herdr requires an inherited Herdr TUI context and a reachable compatible session API; installation alone is insufficient. All terminal drivers require the invoking host's CLI; doitall additionally requires native prify/goodcode child capacity. Terminal membership requires a supported process-ancestry probe (`ps -eo pid=,ppid=` in the shared helper), and launch commands use the destination shell's quoting. Native mode requires the full nested agent capacity documented in the skill. Terminal drivers are optional when native mode satisfies those requirements.
 
 BORK defaults to the `generic` profile. Supply an absolute Markdown profile path with `PROFILE=/absolute/path/to/profile.md` for organization-specific rules. The package includes no organization profile or wrapper. Profile propagation and retained snapshots are documented in [the profile contract](skills/bork-doitall/references/profile.md).
 
@@ -105,9 +107,11 @@ plugin.json                         Portable Agent Plugins manifest
 .claude-plugin/plugin.json          Claude Code compatibility manifest
 .claude-plugin/marketplace.json     Claude Code repository marketplace
 skills/bork-*/                      Eight skills and bundled references/helpers/tests
+scripts/release.js                  Version checks and signed release commit/tag creation
+tests/                             Unified test runner and release tooling tests
 ```
 
-Keep the skills together: their relative sibling links resolve when installed as adjacent folders, including inside the plugin. Source files were imported from the installed BORK skills; edits in this repository do not automatically update those original copies.
+Keep the skills together: their relative sibling links resolve when installed as adjacent folders, including inside the plugin. Symlink installations follow this checkout. Separate copies and cached plugin installations require their own updates.
 
 ## Validate locally
 
@@ -119,7 +123,7 @@ node tests/run.js
 
 See [test commands and prerequisites](tests/README.md) for individual suites and running from another directory. No package installation or Python interpreter is needed.
 
-The doitall suite uses isolated tmux sockets and private GNU Screen socket directories. The review suite verifies SSH-signed fixture commits when `ssh-keygen` is available. Neither suite runs an AI workflow or contacts GitHub.
+Terminal suites use isolated tmux sockets and private GNU Screen socket directories. Real tmux cases skip when tmux is unavailable; Screen cases require GNU Screen and Linux procfs, with additional prerequisites listed in the test guide. The release suite requires `ssh-keygen` to verify signed fixture commits and tags; the review suite skips its signing success case when that executable is unavailable. The suites do not run an AI workflow or contact GitHub. Live visual host cases require explicit opt-in.
 
 Packaging follows [OpenAI's plugin format](https://developers.openai.com/plugins/build/plugins). The root manifest uses the Agent Plugins schema, and the repository marketplace exposes that root as one installable plugin.
 
@@ -171,8 +175,8 @@ node scripts/release.js --check
 
 ## Visible workflow layout
 
-The [shared layout contract](skills/bork-doitall/references/layout.md) defines one coordinator column and up to three master bands, each with reviewer above fixer on the right. Node.js helpers plan from actual geometry, journal ownership and stable role slots, reject uncertain/repeated creation, and remove only owned idle leaves. Tmux layout launches use the coordinator’s existing window; Herdr TUI uses its existing tab. Placeholders are ordinary shell panes, never filler agents.
+New visual batches use the [version 2 demand layout](skills/bork-doitall/references/layout.md). Concurrency is a ceiling of one to three targets. Creation records the existing coordinator area and opens no worker panes; each role appears immediately before its actual launch and disappears after durable result acceptance and verified worker shutdown. The coordinator stays on the left, with active target groups on the right. A master fills its group until tandem roles exist; when both review and fix exist, review sits above fix. Logical admission reserves headroom for both roles without opening panes.
 
-Private real tmux, Herdr TUI, Herdr App/hc and GNU Screen validation covers concurrency 1/2/3 geometry and owned cleanup. App/hc also verifies stable visible worker binding and restart reconciliation; Screen verifies exact display discovery and saved-layout restoration. Headless hc and existing approved helper inputs remain compatible. No shared app is opened automatically. Provider trust/crash paths and untested platforms remain explicit validation limits. See the contract for focus, geometry and recovery details.
+Helpers journal ownership and stable role slots, preserve surviving pane identities, and retain uncertain mutations for inspection. Tmux uses the coordinator's existing window; Herdr TUI uses its existing tab. Version 1 journals keep their fixed shell placeholders for the whole run. Existing approved runs retain their recorded lifecycle. Headless hc has no visual tree and does not implicitly open the App.
 
-Run `node tests/run.js test_layout` for shared planner and isolated tmux validation.
+Run `node tests/run.js test_layout_demand` for the demand planner and private tmux lifecycle, or `node tests/run.js test_layout` for fixed-layout compatibility. Resize fixtures cover both journal versions across the visual adapters. The [test guide](tests/README.md) describes opt-in installed-host checks for Herdr, App/hc and Screen, including retained evidence and prerequisites. These harmless shell/Node fixtures do not establish acceptance of real coding agents, provider trust prompts, or untested host versions.

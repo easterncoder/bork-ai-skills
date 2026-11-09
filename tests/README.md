@@ -2,7 +2,7 @@
 
 Use Node.js 22 or newer from a maintained LTS line. `node --version` must report a supported version. Node 20 fails explicitly before registering tests. Tests use CommonJS and Node built-ins, with no package installation, build step, PHP or Python interpreter.
 
-The runner first checks that both plugin manifests declare the same valid SemVer version. The release suite uses disposable repositories and SSH keys to verify signed commits and tags, version checks, and refusal of dirty checkouts or existing tags.
+The runner first checks that both plugin manifests declare the same valid SemVer version. The release suite requires `ssh-keygen` and uses disposable repositories and SSH keys to verify signed commits and tags, version checks, and refusal of dirty checkouts or existing tags.
 
 From the repository root, run every suite or one named suite:
 
@@ -40,7 +40,7 @@ Each suite below accepts the same individual command, substituting its name for 
 
 Scenario names remain the original test method names. Tests preserve isolated repositories, fake GitHub responses and fake coding executables; they never contact GitHub or start a coding agent. SSH-signature tests generate a disposable key and ignore personal Git configuration. Terminal tests create private tmux sockets, Screen directories and procfs records, then stop only their own resources.
 
-Git and a POSIX shell are required. Linux runtime locking uses util-linux `flock`; its kernel-lock scenario explicitly skips if unavailable. Real tmux cases skip when `tmux` is unavailable. Screen cases require GNU Screen and Linux procfs. Attached Screen and detached frontend cases also require a C compiler (`cc`) and the system `forkpty`/`libutil` headers and library; the small broker provides only a private pseudo-terminal. Frontend discovery also uses `ps`. The signing success case skips if `ssh-keygen` is unavailable. Shell quoting exercises installed `sh`, PowerShell (`pwsh` or `powershell`) and `cmd.exe` variants; absent optional shells are not exercised.
+Git and a POSIX shell are required. Linux runtime locking uses util-linux `flock`; its kernel-lock scenario explicitly skips if unavailable. Real tmux cases skip when `tmux` is unavailable. Screen cases require GNU Screen and Linux procfs. Attached Screen and detached frontend cases also require a C compiler (`cc`) and the system `forkpty`/`libutil` headers and library; the small broker provides only a private pseudo-terminal. Frontend discovery also uses `ps`. The review suite's signing success case skips if `ssh-keygen` is unavailable; the release suite requires it. Shell quoting exercises installed `sh`, PowerShell (`pwsh` or `powershell`) and `cmd.exe` variants; absent optional shells are not exercised.
 
 Two visual host cases skip by default. Opt in only on a host with GNU Screen, Linux procfs, `cc`, `hc`, `herdr-app` and `Xvfb` installed:
 
