@@ -9,8 +9,7 @@ const {
   temporary,
   range,
   json,
-  sha256,
-  pop
+  sha256
 } = require('../../../../tests/support.js');
 /* Offline failure injection for the durable batch transition journal. */
 var HELPER = P(P(__filename).resolve().parents[1]).join("batch.js");
@@ -674,8 +673,8 @@ class BatchTests extends Fixture {
     }).ok);
     this.assertEqual(JSON.parse(this.plan.readText()).targets["12"].status, "complete");
   }
-  test_legacy_reviewer_gate_resumes_without_repeating() {
-    /* Old gate records permit continuation while rejecting a second request gate. */
+  test_reviewer_gate_resumes_without_repeating() {
+    /* Saved gate records permit continuation while rejecting a second request gate. */
     this.start();
     this.child("prify");
     this.assertTrue(this.adopt("prify").ok);
@@ -696,9 +695,6 @@ class BatchTests extends Fixture {
     var plan = JSON.parse(this.plan.readText());
     var records = plan.targets["12"].phase_records;
     this.assertIn("reviewer_gate", records);
-    this.assertNotIn("legacy_reviewer_gate", records);
-    records.legacy_reviewer_gate = pop(records, "reviewer_gate");
-    this.plan.writeText(json(plan));
     this.assertFalse(this.call("gate-complete", {
       "target_id": "12",
       "evidence_path": evidence,

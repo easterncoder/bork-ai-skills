@@ -29,7 +29,7 @@ After all implementation targets stop, the coordinator handles approved `DOMERGE
 
 The runtime enforces ordering, record identity, stopped agents, and one intent per external mutation. The caller still verifies authenticated ownership, approval scope, review evidence, bot identity and timing, checks, mergeability, and that a remote state change belongs to the recorded attempt. Preserve those facts in the existing phase and result records. An ambiguous external outcome remains pending or blocked; do not turn it into another attempt.
 
-New runs write the selected-reviewer gate to `phase_records.reviewer_gate`. The reader also accepts the legacy `phase_records.legacy_reviewer_gate` key so approved runs can resume without repeating a review request. New gate evidence must match `plan.reviewer`; the key does not select a reviewer. Existing approved plans without `reviewer` retain their original gate and skip settings on resume.
+Runs store the selected-reviewer gate in `phase_records.reviewer_gate`. Before upgrading an older saved plan that uses a different gate key, back up the plan and move that gate record to `reviewer_gate`, preserving its evidence and completion fields. Resolve conflicting records before resuming; do not repeat the review request. New gate evidence must match `plan.reviewer`; the key does not select a reviewer. Existing approved plans without `reviewer` retain their original gate and skip settings on resume.
 
 ## Resuming a blocked target
 

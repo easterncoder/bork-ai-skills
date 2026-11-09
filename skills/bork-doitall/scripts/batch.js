@@ -40,11 +40,11 @@ function validateEntryTargets(plan) {
     }
   }
 }
-/** Read current or legacy selected-reviewer gate evidence. */
+/** Read selected-reviewer gate evidence. */
 function reviewerGateRecord(target) {
   c.assertType(target, "array", "reviewerGateRecord.target");
   target = c.clone(target);
-  return c.get(target, "phase_records", "reviewer_gate") ?? c.get(target, "phase_records", "legacy_reviewer_gate") ?? null;
+  return c.get(target, "phase_records", "reviewer_gate") ?? null;
 }
 /** Validate a supplied profile against its approved content hash. */
 function validateReviewProfile(plan) {

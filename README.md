@@ -1,6 +1,6 @@
 # BORK: Bork of Remarkable Knowledge
 
-A private collection of skills for GitHub issue and pull request workflows, available as standalone skill folders or as a plugin. Version 0.1.1.
+A collection of skills for GitHub issue and pull request workflows, available as standalone skill folders or as a plugin. Version 0.1.1.
 
 | Skill | Purpose |
 | --- | --- |
@@ -17,10 +17,11 @@ A private collection of skills for GitHub issue and pull request workflows, avai
 
 The plugin is optional. You can install the skill folders directly in your agent's skills directory. Keep all eight BORK folders together because the workflows call each other and use relative sibling links.
 
-For a shared installation, authenticate GitHub access to this private repository, then clone it into a permanent location and link its skills into `~/.agents/skills`:
+For a shared installation, authenticate GitHub access to the repository, then clone it into a permanent location and link its skills into `~/.agents/skills`:
 
 ```bash
-gh repo clone OWNER/bork-ai-skills
+read -r -p "GitHub repository (OWNER/REPO): " bork_repository
+gh repo clone "$bork_repository" bork-ai-skills
 cd bork-ai-skills
 mkdir -p ~/.agents/skills
 ln -s "$PWD"/skills/bork-* ~/.agents/skills/
@@ -49,10 +50,11 @@ Start a new conversation after installation. Invoke a standalone skill as `$bork
 
 ## Install with Codex
 
-Authenticate Git access to this private repository first. On Codex versions with plugin CLI support:
+Authenticate Git access to the repository first. On Codex versions with plugin CLI support:
 
 ```bash
-codex plugin marketplace add OWNER/bork-ai-skills --ref main
+read -r -p "GitHub repository (OWNER/REPO): " bork_repository
+codex plugin marketplace add "$bork_repository" --ref main
 codex plugin add bork@bork-ai-skills
 ```
 
@@ -64,10 +66,11 @@ If the same BORK skills are already installed individually, use one installation
 
 ## Install with Claude Code
 
-Git must have access to this private GitHub repository. In your terminal:
+Git must have access to the GitHub repository. In your terminal:
 
 ```bash
-claude plugin marketplace add OWNER/bork-ai-skills
+read -r -p "GitHub repository (OWNER/REPO): " bork_repository
+claude plugin marketplace add "$bork_repository"
 claude plugin install bork@bork-ai-skills
 ```
 
@@ -80,7 +83,7 @@ Restart Claude Code after installation. Invoke a bundled skill with its plugin n
 
 Claude Code also accepts `/bork-doitall 123` or `/bork-goodcode 123` when no other command uses that name. The namespaced form explicitly selects the plugin's skill.
 
-Inside Claude Code, the equivalent install commands are `/plugin marketplace add OWNER/bork-ai-skills` and `/plugin install bork@bork-ai-skills`.
+Inside Claude Code, the equivalent install commands are `/plugin marketplace add OWNER/REPO` and `/plugin install bork@bork-ai-skills`.
 
 ## Requirements and behavior
 
