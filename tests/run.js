@@ -7,7 +7,10 @@ if (Number(process.versions.node.split('.')[0]) < 22) {
     process.exit(1);
 }
 const root = path.resolve(__dirname, '..');
-const directories = ['bork-doitall', 'bork-review'].map(skill => path.join(root, 'skills', skill, 'scripts', 'tests'));
+const check = spawnSync(process.execPath, [path.join(root, 'scripts/release.js'), '--check'], {stdio: 'inherit'});
+if (check.error) throw check.error;
+if (check.status !== 0) process.exit(check.status ?? 1);
+const directories = [__dirname, ...['bork-doitall', 'bork-review'].map(skill => path.join(root, 'skills', skill, 'scripts', 'tests'))];
 const suites = directories.flatMap(directory => fs.readdirSync(directory).filter(name => /^test_.*\.js$/.test(name)).map(name => path.join(directory, name)));
 const requested = process.argv.slice(2);
 const selected = requested.length ? requested.map(name => {

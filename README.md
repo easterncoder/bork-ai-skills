@@ -1,6 +1,6 @@
 # BORK: Bork of Remarkable Knowledge
 
-A collection of skills for GitHub issue and pull request workflows, available as standalone skill folders or as a plugin. Version 0.1.1.
+A collection of skills for GitHub issue and pull request workflows, available as standalone skill folders or as a plugin.
 
 | Skill | Purpose |
 | --- | --- |
@@ -127,6 +127,25 @@ GNU Screen execution uses the same role jobs, terminal runner and recovery gates
 
 The separate [hc execution driver](skills/bork-doitall/references/hc.md) verifies caller terminal/core identity and installed lifecycle capabilities. It launches interactive agents, hidden in headless mode, requires Codex `--no-daemon`, reconciles initial-task delivery and blocked prompts, and distinguishes accepted turns from final owned-process shutdown. `herdr-app` is optional and used only for requested visible UI changes. Offline hc fixtures run with `node tests/run.js test_hc`.
 
+
+## Releases
+
+`plugin.json` is the source of truth for the release version. The Claude Code manifest must match it. `node tests/run.js` checks agreement before running the suites; run `node scripts/release.js --check` for only that check.
+
+From a clean checkout with Git commit and tag signing configured, choose the next SemVer version and run:
+
+```bash
+read -r -p "Next release version: " bork_version
+node scripts/release.js "$bork_version"
+```
+
+The command updates both manifests, creates a signed Conventional Commit, and creates a signed tag with the same version. Existing tags are never moved, and nothing is pushed automatically. Inspect the commit and tag, then publish them explicitly:
+
+```bash
+git push <remote> HEAD:main "refs/tags/$bork_version"
+```
+
+If signing fails, inspect the working tree and latest commit before retrying; no release tag is created unless both the commit and tag signing succeed. Dependency and saved-data schema versions are independent of the release version.
 
 ## Visible workflow layout
 

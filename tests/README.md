@@ -2,6 +2,8 @@
 
 Use Node.js 22 or newer from a maintained LTS line. `node --version` must report a supported version. Node 20 fails explicitly before registering tests. Tests use CommonJS and Node built-ins, with no package installation, build step, PHP or Python interpreter.
 
+The runner first checks that both plugin manifests declare the same valid SemVer version. The release suite uses disposable repositories and SSH keys to verify signed commits and tags, version checks, and refusal of dirty checkouts or existing tags.
+
 From the repository root, run every suite or one named suite:
 
 ```sh
@@ -20,6 +22,7 @@ Each suite below accepts the same individual command, substituting its name for 
 
 | Skill | Suite | Original scenarios |
 | --- | --- | ---: |
+| Release tooling | test_release | 5 |
 | bork-doitall | test_batch | 22 |
 | bork-doitall | test_environment | 14 |
 | bork-doitall | test_hc | 10 |
