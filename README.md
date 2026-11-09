@@ -130,22 +130,44 @@ The separate [hc execution driver](skills/bork-doitall/references/hc.md) verifie
 
 ## Releases
 
-`plugin.json` is the source of truth for the release version. The Claude Code manifest must match it. `node tests/run.js` checks agreement before running the suites; run `node scripts/release.js --check` for only that check.
+`plugin.json` is the source of truth for the release version. Use the release command to update it and the Claude Code manifest together. Dependency and saved-data schema versions are independent of the release version.
 
-From a clean checkout with Git commit and tag signing configured, choose the next SemVer version and run:
+Run these commands from the repository root on `main`. First run the [local validation](#validate-locally). The release command requires a clean working tree and index, a configured Git author identity, and working Git commit and tag signing. It uses your existing Git configuration and does not configure signing for you.
+
+Choose the next SemVer version, then create the release locally:
 
 ```bash
 read -r -p "Next release version: " bork_version
 node scripts/release.js "$bork_version"
 ```
 
-The command updates both manifests, creates a signed Conventional Commit, and creates a signed tag with the same version. Existing tags are never moved, and nothing is pushed automatically. Inspect the commit and tag, then publish them explicitly:
+The command validates the version syntax and current manifest agreement, updates both manifests, creates a signed Conventional Commit, and creates a signed tag named exactly after the supplied version. Choose the appropriate version increment yourself. Existing local tags are never moved, and nothing is pushed automatically.
+
+Inspect the release commit and tag:
 
 ```bash
-git push <remote> HEAD:main "refs/tags/$bork_version"
+git show --stat HEAD
+git show --no-patch "$bork_version"
 ```
 
-If signing fails, inspect the working tree and latest commit before retrying; no release tag is created unless both the commit and tag signing succeed. Dependency and saved-data schema versions are independent of the release version.
+Publish the commit and that tag to a configured remote name or repository URL:
+
+```bash
+read -r -p "Git remote name or repository URL: " bork_remote
+git push "$bork_remote" HEAD:main "refs/tags/$bork_version"
+```
+
+This publishes a Git tag; it does not create a GitHub Release or upload release assets.
+
+If signing fails, inspect the working tree and latest commit before retrying. Failed commit signing leaves the manifest changes staged without creating a tag. Failed tag signing leaves the signed release commit in place; after fixing signing, create the missing signed tag on that release commit instead of rerunning the release command. Check that `HEAD` is still the release commit before doing so.
+
+To check manifest agreement and SemVer syntax without making changes:
+
+```bash
+node scripts/release.js --check
+```
+
+`node tests/run.js` runs the same consistency check before any selected test suites.
 
 ## Visible workflow layout
 
